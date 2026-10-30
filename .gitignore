@@ -1,0 +1,13 @@
+node_modules/
+game/node_modules/
+game/dist/
+meshyout/hero/frames/
+meshyout/worker_new/frames/
+meshyout/*.glb
+meshyout/hero/*.glb
+meshyout/worker_new/*.glb
+preview/
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db

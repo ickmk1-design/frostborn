@@ -1,0 +1,59 @@
+{
+  "name": "Level 1: The Camp",
+  "tileW": 80,
+  "tileH": 40,
+  "originX": 195,
+  "originY": 152,
+  "player": {
+    "startIso": [8, 6],
+    "speedPx": 130,
+    "carryCapacity": 4,
+    "collectRangePx": 90,
+    "dropRangePx": 85,
+    "collectIntervalMs": 1400
+  },
+  "fire": {
+    "iso": [8, 7],
+    "fuelMax": 100,
+    "fuelDrainPerSec": 3,
+    "fuelPerLog": 22,
+    "coinsPerLog": 5,
+    "freezeRatePerSec": 4,
+    "freezeMax": 100
+  },
+  "trees": [
+    { "iso": [5, 4] },
+    { "iso": [11, 4] },
+    { "iso": [5, 10] }
+  ],
+  "treeLogCooldownMs": 3000,
+  "buildPads": [
+    {
+      "id": "tent",
+      "iso": [11, 10],
+      "asset": "building_tent_canvas_01",
+      "costCoins": 40,
+      "payRateCoinsPerSec": 12,
+      "standRangePx": 70
+    }
+  ],
+  "frozenSurvivors": [
+    { "iso": [8, 14] },
+    { "iso": [6, 15] },
+    { "iso": [10, 15] }
+  ],
+  "survivorFollowRangePx": 90,
+  "survivorThawRangePx": 80,
+  "survivorThawTimeSec": 3,
+  "workerChopIntervalMs": 4000,
+  "workerWalkSpeed": 90,
+  "walls": [
+    [3,3],[4,3],[5,3],[6,3],[7,3],[8,3],[9,3],[10,3],[11,3],[12,3],[13,3],
+    [3,4],[3,5],[3,6],[3,7],[3,8],[3,9],[3,10],[3,11],[3,12],
+    [13,4],[13,5],[13,6],[13,7],[13,8],[13,9],[13,10],[13,11],[13,12],
+    [4,12],[5,12],[6,12],[7,12],[10,12],[11,12],[12,12],[13,12]
+  ],
+  "gate": [[8,12],[9,12]],
+  "goal": { "survivorsToRescue": 3 },
+  "hintDurationSec": 30
+}
