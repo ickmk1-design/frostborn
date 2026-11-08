@@ -34,9 +34,9 @@ workflows:
         script: cd game && npm run build
 
       - name: Sync Capacitor iOS
-        script: cd game && npx cap sync ios
+        script: cd game && npx cap copy ios
 
-      # ── PROVISIONING PROFILE (must run AFTER cap sync) ───────────────────────
+      # ── PROVISIONING PROFILE (must run AFTER cap copy) ───────────────────────
       - name: Set up provisioning profile
         script: |
           PROFILES_DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
@@ -45,7 +45,7 @@ workflows:
 
       # ── NATIVE BUILD ─────────────────────────────────────────────────────────
       - name: Pod install
-        script: cd game/ios/App && pod install
+        script: cd game/ios/App && pod install --repo-update
 
       - name: Build IPA
         script: |
