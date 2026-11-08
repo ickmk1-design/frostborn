@@ -10,8 +10,7 @@ workflows:
       xcode: latest
       cocoapods: default
       groups:
-        - signing               # CM_CERTIFICATE (base64 .p12), CM_CERTIFICATE_PASSWORD, CM_PROVISIONING_PROFILE
-        - frostborn_env         # placeholder for future env vars
+        - frostborn_env         # placeholder; add per-app keys here as needed
       vars:
         APP_STORE_APP_ID: "6831935786"
         BUNDLE_ID: com.cytbilisim.frostborn
@@ -19,12 +18,37 @@ workflows:
       cancel_previous_builds: true
 
     scripts:
-      # ── SIGNING ──────────────────────────────────────────────────────────────
-      - name: Set up keychain
+      # ── SIGNING — auto-fetch via ASC API integration ──────────────────────────
+      # app_store_connect integration (key K8CBHMQ2S8 configured in Codemagic team)
+      # provides credentials for fetch-signing-files. This creates/renews both
+      # the distribution certificate and the App Store provisioning profile
+      # automatically — no stored p12 or mobileprovision needed.
+      - name: Fetch signing files
         script: |
           keychain initialize
-          printf '%s' "$CM_CERTIFICATE" | base64 -D > /tmp/dist_cert.p12
-          keychain add-certificates --certificate /tmp/dist_cert.p12 --certificate-password "$CM_CERTIFICATE_PASSWORD"
+          PROFILES_DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
+          mkdir -p "$PROFILES_DIR"
+
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --type IOS_APP_STORE \
+            --strict-match-identifier \
+            --profiles-dir "$PROFILES_DIR" \
+            --create
+
+          PROFILE_PATH=$(ls -t "$PROFILES_DIR"/*.mobileprovision 2>/dev/null | head -1)
+          if [ -z "$PROFILE_PATH" ]; then
+            echo "No provisioning profile found"; exit 1
+          fi
+
+          PROFILE_PLIST=$(mktemp)
+          security cms -D -i "$PROFILE_PATH" > "$PROFILE_PLIST"
+          PROFILE_NAME=$(/usr/libexec/PlistBuddy -c "Print :Name" "$PROFILE_PLIST")
+          PROFILE_UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" "$PROFILE_PLIST")
+          echo "Profile: $PROFILE_NAME ($PROFILE_UUID)"
+          echo "PROFILE_NAME=$PROFILE_NAME" >> "$CM_ENV"
+          echo "PROFILE_UUID=$PROFILE_UUID" >> "$CM_ENV"
+
+          keychain add-certificates --certificate-pattern "Apple Distribution"
 
       # ── JS & CAPACITOR ───────────────────────────────────────────────────────
       - name: Install JS dependencies
@@ -35,13 +59,6 @@ workflows:
 
       - name: Sync Capacitor iOS
         script: cd game && npx cap sync ios
-
-      # ── PROVISIONING PROFILE ─────────────────────────────────────────────────
-      - name: Set up provisioning profile
-        script: |
-          PROFILES_DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
-          mkdir -p "$PROFILES_DIR"
-          printf '%s' "$CM_PROVISIONING_PROFILE" | base64 -D > "$PROFILES_DIR/Frostborn.mobileprovision"
 
       # ── NATIVE BUILD ─────────────────────────────────────────────────────────
       - name: Pod install
@@ -55,7 +72,6 @@ workflows:
           echo "TestFlight latest: $LATEST  ->  building: $NEXT_BUILD"
 
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $NEXT_BUILD" game/ios/App/App/Info.plist
-          echo "CFBundleVersion patched to $NEXT_BUILD"
 
           xcodebuild \
             -workspace game/ios/App/App.xcworkspace \
@@ -65,7 +81,7 @@ workflows:
             -archivePath /tmp/Frostborn.xcarchive \
             CODE_SIGN_STYLE=Manual \
             DEVELOPMENT_TEAM=6DQ86Y62WC \
-            PROVISIONING_PROFILE_SPECIFIER="Frostborn AppStore CM" \
+            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME" \
             CODE_SIGN_IDENTITY="Apple Distribution" \
             CURRENT_PROJECT_VERSION=$NEXT_BUILD \
             archive \
@@ -78,10 +94,11 @@ workflows:
             exit $BUILD_EXIT
           fi
 
-          export BUNDLE_ID
+          export BUNDLE_ID PROFILE_NAME
           python3 -c "
           import os
           bundle = os.environ['BUNDLE_ID']
+          profile = os.environ['PROFILE_NAME']
           tpl = '''<?xml version=\"1.0\" encoding=\"UTF-8\"?>
           <!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">
           <plist version=\"1.0\">
@@ -95,11 +112,11 @@ workflows:
             <key>uploadSymbols</key><true/>
             <key>provisioningProfiles</key>
             <dict>
-              <key>{b}</key><string>Frostborn AppStore CM</string>
+              <key>{b}</key><string>{p}</string>
             </dict>
           </dict>
           </plist>'''
-          print(tpl.format(b=bundle))
+          print(tpl.format(b=bundle, p=profile))
           " > "$CM_BUILD_DIR/ExportOptions.plist"
 
           xcodebuild \
