@@ -234,6 +234,7 @@ workflows:
         script: |
           export NODE_OPTIONS="--max-old-space-size=8192"
           cd game/android
+          chmod +x gradlew
           ./gradlew bundleRelease --no-daemon --stacktrace --info 2>&1 | tee /tmp/gradle.log
           RC=${PIPESTATUS[0]}
           cp /tmp/gradle.log ../../gradle-full.log || true
