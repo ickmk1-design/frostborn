@@ -185,22 +185,23 @@ workflows:
           ksp = os.environ["CM_KEYSTORE_PASSWORD"]
           ka  = os.environ["CM_KEY_ALIAS"]
           kp  = os.environ.get("CM_KEY_PASSWORD","")
-          release_block = (
+          # Inject full signingConfigs block before buildTypes (Capacitor gradle has no debug signingConfig)
+          signing_block = (
+              "    signingConfigs {\n"
               "        release {\n"
               "            storeFile file('upload-key.jks')\n"
               f"            storePassword '{ksp}'\n"
               f"            keyAlias '{ka}'\n"
               f"            keyPassword '{kp}'\n"
               "        }\n"
+              "    }\n"
           )
-          debug_pattern = re.compile(r"(signingConfigs\s*\{\s*debug\s*\{[^}]*\})", re.DOTALL)
-          m = debug_pattern.search(s)
-          if not m: raise SystemExit("Could not locate signingConfigs.debug")
-          s = s[:m.end()] + "\n" + release_block + s[m.end():]
-          NEEDLE = "signingConfig signingConfigs.debug"; NEW = "signingConfig signingConfigs.release"
-          first = s.find(NEEDLE); second = s.find(NEEDLE, first + len(NEEDLE))
-          if second < 0: raise SystemExit("expected 2 occurrences of signingConfig debug")
-          s = s[:second] + NEW + s[second+len(NEEDLE):]
+          if 'signingConfigs' not in s:
+              s = re.sub(r'(\s*buildTypes\s*\{)', '\n' + signing_block + r'\1', s, count=1)
+          # Wire release buildType to use the signingConfig
+          s = re.sub(r'(buildTypes\s*\{[^}]*release\s*\{)', r'\1\n            signingConfig signingConfigs.release', s, count=1)
+          bg.write_text(s)
+          print("signingConfigs patched")
           bg.write_text(s)
           print("patched")
           PY

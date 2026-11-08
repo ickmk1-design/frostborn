@@ -50,7 +50,7 @@ export default class BootScene extends Phaser.Scene {
     });
 
     for (const key of ASSETS) {
-      this.load.image(key, `assets/${key}.png`);
+      this.load.image(key, `assets/${key}.webp`);
     }
 
     // Character texture atlases (optimized WebP, trimmed, 4096×4096 max)
@@ -67,7 +67,7 @@ export default class BootScene extends Phaser.Scene {
 
     // Generated assets (optional — skip gracefully if missing)
     for (const k of ['prop_rock_cluster_01', 'prop_snow_bush_01', 'prop_cliff_edge_01', 'prop_lantern_post_01']) {
-      this.load.image(k, `assets/${k}.png`);
+      this.load.image(k, `assets/${k}.webp`);
     }
 
     // Sounds — OGG for most browsers, M4A fallback for Safari/iOS
