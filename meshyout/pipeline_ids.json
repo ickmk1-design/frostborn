@@ -1,0 +1,19 @@
+{
+  "i3d_task": "01a1770f-1957-7324-be8b-2628ca2941ad",
+  "remesh_task": "01a17717-00be-70e0-8ec2-c471a81e1301",
+  "rig_task": "01a17719-59bc-7201-84e9-2a2cda867a04",
+  "anim_tasks": {
+    "walk": "01a17721-8743-7747-b9f3-21cf532a2aff",
+    "idle": "01a17721-8c4b-7406-bf3a-9440c6c53ab1",
+    "chop": "01a17721-911c-730e-9303-6c2cb52e4c37",
+    "carry_walk": "01a17721-95b2-7120-9190-e63e48b8e383",
+    "cheer": "01a17721-9a82-714a-a167-b9c0aea757c4"
+  },
+  "action_ids": {
+    "walk": 30,
+    "idle": 335,
+    "chop": 237,
+    "carry_walk": 551,
+    "cheer": 59
+  }
+}

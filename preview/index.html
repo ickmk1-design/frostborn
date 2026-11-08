@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Frostborn — Sprite Preview</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #1a1f2e; color: #e0e8f0; font-family: monospace; padding: 24px; }
+  h1   { font-size: 18px; color: #88ccff; margin-bottom: 6px; }
+  p    { font-size: 12px; color: #667788; margin-bottom: 20px; }
+
+  .tabs { display: flex; gap: 8px; margin-bottom: 20px; }
+  .tab  { padding: 6px 18px; background: #263040; border: 1px solid #334; border-radius: 4px;
+          cursor: pointer; font: 13px monospace; color: #aac; }
+  .tab.active { background: #335; border-color: #66aaff; color: #88ccff; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: 80px repeat(var(--ncols), var(--fw)px);
+    gap: 2px;
+    align-items: center;
+  }
+  .dir-label {
+    font-size: 11px; color: #66aacc; text-align: right; padding-right: 8px;
+  }
+  canvas {
+    background: #0d1520;
+    border: 1px solid #223;
+    image-rendering: pixelated;
+    width: var(--fw)px;
+    height: var(--fh)px;
+  }
+  canvas.playing { border-color: #4488ff; }
+
+  .controls { margin-top: 16px; display: flex; gap: 12px; align-items: center; }
+  label { font-size: 12px; color: #889; }
+  input[type=range] { width: 120px; }
+  span.val { min-width: 30px; display: inline-block; }
+
+  .status { font-size: 11px; color: #556677; margin-top: 12px; }
+</style>
+</head>
+<body>
+
+<h1>Frostborn — 8-Direction Sprite Preview</h1>
+<p>Loads <code>../meshyout/sheets/spritesheet_walk.json</code> and <code>spritesheet_idle.json</code></p>
+
+<div class="tabs">
+  <div class="tab active" data-anim="walk">Walk</div>
+  <div class="tab"        data-anim="idle">Idle</div>
+</div>
+
+<div class="grid" id="grid"></div>
+
+<div class="controls">
+  <label>FPS <input type="range" id="fps-slider" min="1" max="24" value="8">
+  <span class="val" id="fps-val">8</span></label>
+  <label>Zoom <input type="range" id="zoom-slider" min="1" max="6" value="2">
+  <span class="val" id="zoom-val">2×</span></label>
+</div>
+
+<div class="status" id="status">Loading …</div>
+
+<script>
+const DIR_LABELS = ["SE (front)", "S", "SW", "W", "NW (back)", "N", "NE", "E"];
+const SHEET_DIR  = "../meshyout/sheets/";
+
+let meta = null;
+let img  = null;
+let canvases = [];
+let frameIdx = 0;
+let fps = 8;
+let zoom = 2;
+let currentAnim = "walk";
+let rafId = null;
+let lastT = 0;
+
+// ── Load ─────────────────────────────────────────────────────────────────────
+
+async function loadAnim(anim) {
+  status("Loading " + anim + " …");
+  const base = SHEET_DIR + "spritesheet_" + anim;
+  try {
+    const resp = await fetch(base + ".json");
+    if (!resp.ok) throw new Error("JSON not found: " + base + ".json");
+    meta = await resp.json();
+  } catch (e) {
+    status("⚠ " + e.message + " — run pack_sprites.py first");
+    meta = null; buildGrid(); return;
+  }
+  img = new Image();
+  await new Promise((res, rej) => {
+    img.onload = res;
+    img.onerror = () => rej(new Error("PNG not found: " + base + ".png"));
+    img.src = base + ".png";
+  }).catch(e => { status("⚠ " + e.message); meta = null; buildGrid(); return; });
+  if (!meta) return;
+  buildGrid();
+  startLoop();
+  status("Loaded: " + meta.nDirs + " directions × " + meta.nFrames + " frames @ " +
+         meta.frameW + "×" + meta.frameH + "px");
+}
+
+// ── Grid ─────────────────────────────────────────────────────────────────────
+
+function buildGrid() {
+  const grid = document.getElementById("grid");
+  grid.innerHTML = "";
+  canvases = [];
+  if (!meta) { grid.innerHTML = '<div style="color:#c66;padding:12px">No data loaded.</div>'; return; }
+
+  const fw = meta.frameW * zoom;
+  const fh = meta.frameH * zoom;
+  grid.style.setProperty("--fw", fw);
+  grid.style.setProperty("--fh", fh);
+  grid.style.setProperty("--ncols", meta.nFrames);
+
+  // Header row
+  const h0 = document.createElement("div");
+  h0.className = "dir-label"; h0.textContent = ""; grid.appendChild(h0);
+  for (let f = 0; f < meta.nFrames; f++) {
+    const hc = document.createElement("div");
+    hc.style = `font-size:10px;color:#445;text-align:center;`;
+    hc.textContent = f; grid.appendChild(hc);
+  }
+
+  for (let d = 0; d < meta.nDirs; d++) {
+    const lbl = document.createElement("div");
+    lbl.className = "dir-label";
+    lbl.textContent = (meta.dirLabels || DIR_LABELS)[d] || d;
+    grid.appendChild(lbl);
+
+    for (let f = 0; f < meta.nFrames; f++) {
+      const cv = document.createElement("canvas");
+      cv.width  = meta.frameW;
+      cv.height = meta.frameH;
+      cv.style.width  = fw + "px";
+      cv.style.height = fh + "px";
+      cv.dataset.dir = d; cv.dataset.frame = f;
+      grid.appendChild(cv);
+      canvases.push(cv);
+    }
+  }
+  drawFrame(0);
+}
+
+function drawFrame(fi) {
+  if (!meta || !img) return;
+  frameIdx = fi % meta.nFrames;
+  const sx = frameIdx * meta.frameW;
+  for (let d = 0; d < meta.nDirs; d++) {
+    const cv = canvases[d * meta.nFrames + frameIdx];
+    if (!cv) continue;
+    const ctx = cv.getContext("2d");
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    const sy = d * meta.frameH;
+    ctx.drawImage(img, sx, sy, meta.frameW, meta.frameH, 0, 0, cv.width, cv.height);
+    // Highlight current column
+    canvases.forEach((c, i) => c.classList.toggle("playing", i % meta.nFrames === frameIdx));
+  }
+}
+
+// ── Animation loop ────────────────────────────────────────────────────────────
+
+function startLoop() {
+  if (rafId) cancelAnimationFrame(rafId);
+  lastT = 0;
+  function tick(t) {
+    if (!meta) return;
+    if (t - lastT >= 1000 / fps) {
+      frameIdx = (frameIdx + 1) % meta.nFrames;
+      drawFrame(frameIdx);
+      lastT = t;
+    }
+    rafId = requestAnimationFrame(tick);
+  }
+  rafId = requestAnimationFrame(tick);
+}
+
+// ── Controls ──────────────────────────────────────────────────────────────────
+
+document.getElementById("fps-slider").addEventListener("input", e => {
+  fps = +e.target.value;
+  document.getElementById("fps-val").textContent = fps;
+});
+
+document.getElementById("zoom-slider").addEventListener("input", e => {
+  zoom = +e.target.value;
+  document.getElementById("zoom-val").textContent = zoom + "×";
+  buildGrid();
+  if (meta) startLoop();
+});
+
+document.querySelectorAll(".tab").forEach(tab => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+    tab.classList.add("active");
+    currentAnim = tab.dataset.anim;
+    loadAnim(currentAnim);
+  });
+});
+
+function status(msg) {
+  document.getElementById("status").textContent = msg;
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+loadAnim("walk");
+</script>
+</body>
+</html>

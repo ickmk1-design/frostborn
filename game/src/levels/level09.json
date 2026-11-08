@@ -1,0 +1,106 @@
+{
+  "name": "Level 9: The Forsaken Ridge",
+  "tileW": 80, "tileH": 40, "originX": 195, "originY": 152,
+  "player": {
+    "startIso": [8, 6], "speedPx": 125, "carryCapacity": 4,
+    "collectRangePx": 86, "dropRangePx": 85, "collectIntervalMs": 1500,
+    "maxHp": 10, "hpRegenPerSec": 0.3
+  },
+  "fire": {
+    "iso": [8, 7], "fuelMax": 100, "fuelDrainPerSec": 5.5,
+    "fuelPerLog": 20, "coinsPerLog": 5,
+    "freezeRatePerSec": 5, "freezeMax": 100
+  },
+  "trees": [
+    { "iso": [5, 4] }, { "iso": [11, 4] }
+  ],
+  "treeLogCooldownMs": 5800,
+  "buildPads": [
+    {
+      "id": "tent", "iso": [11, 10], "asset": "building_tent_canvas_01",
+      "costCoins": 140, "payRateCoinsPerSec": 16, "standRangePx": 70
+    }
+  ],
+  "frozenSurvivors": [
+    { "iso": [8, 20] }, { "iso": [4, 23] }, { "iso": [12, 23] },
+    { "iso": [6, 27] }, { "iso": [10, 27] }, { "iso": [8, 30] },
+    { "iso": [5, 32] }, { "iso": [11, 32] }
+  ],
+  "survivorFollowRangePx": 86, "survivorThawRangePx": 112, "survivorThawTimeSec": 5.5,
+  "workerChopIntervalMs": 5200, "workerWalkSpeed": 84,
+  "walls": [
+    [3,3],[4,3],[5,3],[6,3],[7,3],[8,3],[9,3],[10,3],[11,3],[12,3],[13,3],
+    [3,4],[3,5],[3,6],[3,7],[3,8],[3,9],[3,10],[3,11],[3,12],
+    [13,4],[13,5],[13,6],[13,7],[13,8],[13,9],[13,10],[13,11],[13,12],
+    [4,12],[5,12],[6,12],[7,12],[10,12],[11,12],[12,12],[13,12]
+  ],
+  "gate": [[8,12],[9,12]],
+  "goal": { "survivorsToRescue": 8 },
+  "stages": [
+    { "type": "rescueSurvivors", "target": 2, "hintText": "Rescue 2 close survivors first!", "completedText": "Good! Now hunt — the pack is closing in." },
+    { "type": "huntAnimals",     "target": 3, "hintText": "Hunt 3 wolves to clear the path", "completedText": "Path cleared! Build shelter." },
+    { "type": "buildStructure",  "target": "tent", "hintText": "Build the tent  140\uD83E\uDE99", "completedText": "Tent up! Find all survivors." },
+    { "type": "rescueSurvivors", "target": 8, "hintText": "Rescue all 8 survivors" }
+  ],
+  "hintDurationSec": 20,
+  "animals": [
+    { "iso": [5, 15], "type": "wolf", "roamCenter": [5, 16], "roamRadius": 2.5 },
+    { "iso": [11, 15], "type": "wolf", "roamCenter": [11, 16], "roamRadius": 2.5 },
+    { "iso": [8, 18], "type": "wolf", "roamCenter": [8, 19], "roamRadius": 2.0 },
+    { "iso": [5, 24], "type": "wolf", "roamCenter": [5, 25], "roamRadius": 2.0 },
+    { "iso": [11, 24], "type": "wolf", "roamCenter": [11, 25], "roamRadius": 2.0 },
+    { "iso": [7, 29], "type": "wolf", "roamCenter": [8, 30], "roamRadius": 2.0 },
+    { "iso": [9, 29], "type": "wolf", "roamCenter": [9, 30], "roamRadius": 2.0 }
+  ],
+  "animalConfig": {
+    "wolf": {
+      "hp": 9, "speed": 66, "aggroSpeed": 112, "aggroRange": 128,
+      "circleDistancePx": 132, "attackRange": 94, "attackIntervalMs": 1180,
+      "biteIntervalMs": 1080, "biteDamage": 1, "knockbackPx": 152,
+      "meatDrop": 2, "meatPerHit": 1, "respawnDelaySec": 50,
+      "fleeBelowHpPct": 0.3, "fleeTimeSec": 3,
+      "windupMs": 350, "lungeSpeedPx": 365, "backoffDistPx": 162, "backoffSpeedPx": 222
+    }
+  },
+  "cookingConfig": { "cookTimeMs": 3500, "meatToCoins": 10 },
+  "decor": [
+    { "key": "prop_snow_pine_tree_01",   "iso": [2,  1] },
+    { "key": "prop_snow_pine_tree_01",   "iso": [12, 1] },
+    { "key": "prop_frozen_tree_dead_01", "iso": [4,  1] },
+    { "key": "prop_frozen_tree_dead_01", "iso": [9,  2] },
+    { "key": "prop_frozen_tree_dead_01", "iso": [3,  2] },
+    { "key": "prop_snow_pine_tree_01",   "iso": [1,  5] },
+    { "key": "prop_snow_pine_tree_01",   "iso": [15, 5] },
+    { "key": "prop_frozen_tree_dead_01", "iso": [2,  8] },
+    { "key": "prop_frozen_tree_dead_01", "iso": [14, 8] },
+    { "key": "prop_rock_cluster_01",     "iso": [0,  7] },
+    { "key": "prop_rock_cluster_01",     "iso": [16, 7] },
+    { "key": "prop_snow_bush_01",        "iso": [0,  4] },
+    { "key": "prop_snow_bush_01",        "iso": [16, 4] },
+    { "key": "prop_barrel_01",           "iso": [5,  5] },
+    { "key": "prop_barrel_01",           "iso": [11, 5] },
+    { "key": "prop_lantern_post_01",     "iso": [5,  6] },
+    { "key": "prop_lantern_post_01",     "iso": [11, 6] },
+    { "key": "prop_frozen_tree_dead_01", "iso": [4, 14] },
+    { "key": "prop_frozen_tree_dead_01", "iso": [12,14] },
+    { "key": "tile_snow_drift_mound_01", "iso": [6, 14] },
+    { "key": "tile_snow_drift_mound_01", "iso": [10,14] },
+    { "key": "prop_rock_cluster_01",     "iso": [3, 16] },
+    { "key": "prop_rock_cluster_01",     "iso": [13,16] },
+    { "key": "prop_lantern_post_01",     "iso": [7, 13] },
+    { "key": "prop_lantern_post_01",     "iso": [11,13] },
+    { "key": "prop_frozen_tree_dead_01", "iso": [4, 18] },
+    { "key": "prop_frozen_tree_dead_01", "iso": [12,18] },
+    { "key": "prop_rock_cluster_01",     "iso": [3, 21] },
+    { "key": "prop_rock_cluster_01",     "iso": [13,21] },
+    { "key": "tile_snow_drift_mound_01", "iso": [8, 22] },
+    { "key": "prop_frozen_tree_dead_01", "iso": [4, 25] },
+    { "key": "prop_frozen_tree_dead_01", "iso": [12,25] },
+    { "key": "tile_snow_drift_mound_01", "iso": [6, 28] },
+    { "key": "tile_snow_drift_mound_01", "iso": [10,28] },
+    { "key": "prop_rock_cluster_01",     "iso": [4, 30] },
+    { "key": "prop_rock_cluster_01",     "iso": [12,30] },
+    { "key": "prop_warning_sign_red",    "iso": [8, 14] },
+    { "key": "prop_warning_sign_red",    "iso": [9, 14] }
+  ]
+}

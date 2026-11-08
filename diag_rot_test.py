@@ -25,7 +25,7 @@ cam.rotation_euler = d.to_track_quat("-Z","Z").to_euler()
 
 ld = bpy.data.lights.new("L","AREA"); ld.energy=900; ld.size=5
 lo = bpy.data.objects.new("L",ld); scene.collection.objects.link(lo)
-lo.location=(−3,−3,7)
+lo.location=(-3,-3,7)
 
 scene.frame_set(1)
 OUT = pathlib.Path(r"C:\Users\ickmk\Frostborn\meshyout\hero")

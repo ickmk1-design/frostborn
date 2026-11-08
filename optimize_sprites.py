@@ -26,7 +26,7 @@ N_DIRS   = 8
 # Target frame counts per animation (resampled from full renders)
 TARGET_FRAMES = {
     'walk':       12,
-    'idle':        8,
+    'idle':       24,
     'chop':       16,
     'carry_walk': 12,
     'cheer':      12,

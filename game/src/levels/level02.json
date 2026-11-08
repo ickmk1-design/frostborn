@@ -1,0 +1,132 @@
+{
+  "name": "Level 2: The Hunting Ground",
+  "tileW": 80, "tileH": 40, "originX": 195, "originY": 152,
+  "player": {
+    "startIso": [8, 6], "speedPx": 130, "carryCapacity": 4,
+    "collectRangePx": 90, "dropRangePx": 85, "collectIntervalMs": 1400,
+    "maxHp": 10, "hpRegenPerSec": 0.5
+  },
+  "fire": {
+    "iso": [8, 7], "fuelMax": 100, "fuelDrainPerSec": 3.5,
+    "fuelPerLog": 20, "coinsPerLog": 5,
+    "freezeRatePerSec": 4, "freezeMax": 100
+  },
+  "trees": [
+    { "iso": [5, 4] }, { "iso": [11, 4] }, { "iso": [5, 10] }
+  ],
+  "treeLogCooldownMs": 4500,
+  "buildPads": [
+    {
+      "id": "tent", "iso": [11, 10], "asset": "building_tent_canvas_01",
+      "costCoins": 80, "payRateCoinsPerSec": 12, "standRangePx": 70
+    }
+  ],
+  "frozenSurvivors": [
+    { "iso": [8, 20] }, { "iso": [5, 22] }, { "iso": [11, 22] },
+    { "iso": [6, 25] }, { "iso": [10, 25] }
+  ],
+  "survivorFollowRangePx": 90, "survivorThawRangePx": 120, "survivorThawTimeSec": 4,
+  "workerChopIntervalMs": 4500, "workerWalkSpeed": 90,
+  "walls": [
+    [3,3],[4,3],[5,3],[6,3],[7,3],[8,3],[9,3],[10,3],[11,3],[12,3],[13,3],
+    [3,4],[3,5],[3,6],[3,7],[3,8],[3,9],[3,10],[3,11],[3,12],
+    [13,4],[13,5],[13,6],[13,7],[13,8],[13,9],[13,10],[13,11],[13,12],
+    [4,12],[5,12],[6,12],[7,12],[10,12],[11,12],[12,12],[13,12]
+  ],
+  "gate": [[8,12],[9,12]],
+  "goal": { "survivorsToRescue": 5 },
+  "stages": [
+    { "type": "huntAnimals",    "target": 1, "hintText": "Hunt a wolf \u2014 walk close to attack!", "completedText": "Wolf hunted! Now rescue survivors." },
+    { "type": "rescueSurvivors","target": 2, "hintText": "Rescue 2 frozen survivors", "completedText": "Good! Now build the tent." },
+    { "type": "buildStructure", "target": "tent", "hintText": "Build the tent  80\uD83E\uDE99", "completedText": "Tent built! Rescue more survivors." },
+    { "type": "rescueSurvivors","target": 5, "hintText": "Rescue 3 more survivors" }
+  ],
+  "hintDurationSec": 25,
+  "animals": [
+    { "iso": [4, 16], "type": "wolf", "roamCenter": [5, 17], "roamRadius": 2.5 },
+    { "iso": [6, 16], "type": "wolf", "roamCenter": [5, 17], "roamRadius": 2.5 },
+    { "iso": [11, 22], "type": "wolf", "roamCenter": [10, 23], "roamRadius": 2.5 },
+    { "iso": [13, 22], "type": "wolf", "roamCenter": [10, 23], "roamRadius": 2.5 }
+  ],
+  "animalConfig": {
+    "wolf": {
+      "hp": 6,
+      "speed": 58,
+      "aggroSpeed": 100,
+      "aggroRange": 110,
+      "circleDistancePx": 125,
+      "attackRange": 88,
+      "attackIntervalMs": 1300,
+      "biteIntervalMs": 1200,
+      "biteDamage": 1,
+      "knockbackPx": 140,
+      "meatDrop": 2,
+      "meatPerHit": 1,
+      "respawnDelaySec": 60,
+      "fleeBelowHpPct": 0.4,
+      "fleeTimeSec": 4,
+      "windupMs": 380,
+      "lungeSpeedPx": 340,
+      "backoffDistPx": 155,
+      "backoffSpeedPx": 210
+    }
+  },
+  "cookingConfig": {
+    "cookTimeMs": 3500,
+    "meatToCoins": 10
+  },
+  "decor": [
+    { "key": "prop_snow_pine_tree_01",   "iso": [2,  1] },
+    { "key": "prop_snow_pine_tree_01",   "iso": [4,  1] },
+    { "key": "prop_snow_pine_tree_01",   "iso": [6,  1] },
+    { "key": "prop_snow_pine_tree_01",   "iso": [8,  1] },
+    { "key": "prop_snow_pine_tree_01",   "iso": [10, 1] },
+    { "key": "prop_snow_pine_tree_01",   "iso": [12, 1] },
+    { "key": "prop_frozen_tree_dead_01", "iso": [3,  2] },
+    { "key": "prop_frozen_tree_dead_01", "iso": [9,  2] },
+    { "key": "prop_snow_pine_tree_01",   "iso": [1,  5] },
+    { "key": "prop_snow_pine_tree_01",   "iso": [1,  8] },
+    { "key": "prop_snow_pine_tree_01",   "iso": [1, 11] },
+    { "key": "prop_frozen_tree_dead_01", "iso": [2,  6] },
+    { "key": "prop_snow_pine_tree_01",   "iso": [15, 5] },
+    { "key": "prop_snow_pine_tree_01",   "iso": [15, 8] },
+    { "key": "prop_snow_pine_tree_01",   "iso": [15,11] },
+    { "key": "prop_frozen_tree_dead_01", "iso": [14, 6] },
+    { "key": "prop_igloo_01",            "iso": [15, 2] },
+    { "key": "prop_rock_cluster_01",     "iso": [0,  7] },
+    { "key": "prop_rock_cluster_01",     "iso": [16, 7] },
+    { "key": "prop_snow_bush_01",        "iso": [0,  4] },
+    { "key": "prop_snow_bush_01",        "iso": [0, 10] },
+    { "key": "prop_snow_bush_01",        "iso": [16, 4] },
+    { "key": "prop_barrel_01",           "iso": [5,  5] },
+    { "key": "prop_barrel_01",           "iso": [11, 5] },
+    { "key": "building_storage_crate_stacks", "iso": [5, 11] },
+    { "key": "resource_wood_logs_01",    "iso": [7,  8] },
+    { "key": "prop_bench_01",            "iso": [5,  9] },
+    { "key": "prop_bench_01",            "iso": [3,  8] },
+    { "key": "prop_lantern_post_01",     "iso": [5,  6] },
+    { "key": "prop_lantern_post_01",     "iso": [11, 6] },
+    { "key": "prop_snow_pine_tree_01",   "iso": [4, 14] },
+    { "key": "prop_snow_pine_tree_01",   "iso": [12,14] },
+    { "key": "tile_snow_drift_mound_01", "iso": [6, 14] },
+    { "key": "tile_snow_drift_mound_01", "iso": [10,14] },
+    { "key": "prop_cliff_edge_01",       "iso": [4, 16] },
+    { "key": "prop_cliff_edge_01",       "iso": [12,16] },
+    { "key": "prop_lantern_post_01",     "iso": [7, 13] },
+    { "key": "prop_lantern_post_01",     "iso": [11,13] },
+    { "key": "prop_snow_pine_tree_01",   "iso": [5, 17] },
+    { "key": "prop_snow_pine_tree_01",   "iso": [11,17] },
+    { "key": "prop_frozen_tree_dead_01", "iso": [4, 18] },
+    { "key": "prop_frozen_tree_dead_01", "iso": [12,18] },
+    { "key": "prop_rock_cluster_01",     "iso": [5, 19] },
+    { "key": "prop_rock_cluster_01",     "iso": [11,19] },
+    { "key": "prop_snow_pine_tree_01",   "iso": [4, 21] },
+    { "key": "prop_snow_pine_tree_01",   "iso": [12,21] },
+    { "key": "prop_cliff_edge_01",       "iso": [3, 23] },
+    { "key": "prop_cliff_edge_01",       "iso": [13,23] },
+    { "key": "prop_snow_pine_tree_01",   "iso": [4, 24] },
+    { "key": "prop_snow_pine_tree_01",   "iso": [12,24] },
+    { "key": "tile_snow_drift_mound_01", "iso": [7, 20] },
+    { "key": "tile_snow_drift_mound_01", "iso": [9, 23] }
+  ]
+}

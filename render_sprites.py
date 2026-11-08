@@ -46,10 +46,10 @@ if not GLB.exists():
 
 # ── CALIBRATION — adjust if character faces wrong way ─────────────────────────
 # Direction 0 should show the character's FRONT facing screen-lower-right.
-# In Meshy's output the character faces +Z (glTF convention).
-# After import into Blender (Y-up→Z-up conversion), the facing is typically +Y.
-# Rotate so dir0 shows front facing the iso camera.
-BASE_ROT_Z = math.radians(135)   # ← tweak if dir0 looks backward
+# Blender 5.2 imports GLB with identity armature rotation; character is already
+# upright (head at local +Z). Default face direction is local -Y (south).
+# Rz(135°) turns the character NE (toward the iso camera at azimuth 45°) for dir0.
+BASE_ROT_Z = math.radians(135)   # ← tweak if dir0 looks backward/sideways
 
 # 8 directions: 0=SE (front), 1=S, 2=SW, 3=W, 4=NW(back), 5=N, 6=NE, 7=E
 DIR_STEP   = (2 * math.pi) / 8   # 45° each step
@@ -60,7 +60,7 @@ DIR_STEP   = (2 * math.pi) / 8   # 45° each step
 ELEV_RAD   = math.radians(32)         # slightly above 2:1 iso (26.5°) for better character visibility
 AZIM_RAD   = math.radians(45)        # NE quadrant
 CAM_DIST   = 12.0                    # world units (irrelevant for ortho, but must be > scene)
-ORTHO_SCALE = 2.0                    # world units that fill the frame height
+ORTHO_SCALE = 1.4                    # world units that fill the frame height (char ~0.56u; walk/chop poses add height)
 
 # ── Scene setup ───────────────────────────────────────────────────────────────
 print("Clearing scene …")
@@ -86,12 +86,14 @@ if not armatures:
     print("ERROR: No armature found in GLB. Check Meshy output.")
     sys.exit(1)
 arm = armatures[0]
-arm.rotation_mode = "XYZ"
+# Use QUATERNION mode so animation's euler F-curves don't override our rotation.
+arm.rotation_mode = "QUATERNION"
 print(f"  Armature: {arm.name}  scale={tuple(round(v,3) for v in arm.scale)}")
 
-# Blender's glTF importer bakes Y-up→Z-up into vertex data on import,
-# so no extra X correction is needed here. Compute bounds at rest pose.
-arm.rotation_euler = (0.0, 0.0, 0.0)
+import mathutils
+# Character is already upright after Blender 5.2 GLB import (identity rotation).
+# Ground it: shift Z so feet sit at world Z=0.
+arm.rotation_quaternion = mathutils.Quaternion()   # identity — no flip needed
 bpy.context.view_layer.update()
 
 arm_min_z = min((arm.matrix_world @ v.co).z
@@ -125,7 +127,7 @@ cam_obj.location = (cam_x, cam_y, cam_z)
 # Point camera at character center of mass (not ground level)
 aim_z = char_center_z
 direction = mathutils.Vector((0, 0, aim_z)) - cam_obj.location
-rot_quat  = direction.to_track_quat("-Z", "Z")
+rot_quat  = direction.to_track_quat("-Z", "Y")
 cam_obj.rotation_euler = rot_quat.to_euler()
 print(f"  Camera at ({cam_x:.2f},{cam_y:.2f},{cam_z:.2f}) aiming at Z={aim_z:.2f}")
 
@@ -179,19 +181,23 @@ print(f"  Animation frames: {f_start}–{f_end}")
 scene.frame_start = f_start
 scene.frame_end   = f_end
 
+# ── Rotation controller ───────────────────────────────────────────────────────
 # ── Render loop ───────────────────────────────────────────────────────────────
 print(f"\nRendering {args.dirs} directions × {f_end - f_start + 1} frames "
       f"at {args.frame_size}×{args.frame_size}px …")
 
 root_bone = arm.pose.bones[0]  # Hips — used to cancel root motion
+arm.rotation_mode = "QUATERNION"
 
 for dir_idx in range(args.dirs):
     rot_z = BASE_ROT_Z + DIR_STEP * dir_idx
-    arm.rotation_euler = (0.0, 0.0, rot_z)
-    arm.rotation_mode  = "XYZ"
+    # Pure Rz — character is already upright, no Rx flip needed.
+    _q_dir = mathutils.Quaternion((0, 0, 1), rot_z)
 
     for frame in range(f_start, f_end + 1):
         scene.frame_set(frame)
+        # Set quaternion AFTER frame_set to override any euler F-curves on armature.
+        arm.rotation_quaternion = _q_dir
         bpy.context.view_layer.update()
 
         # Cancel root motion: keep character centred at world XY origin

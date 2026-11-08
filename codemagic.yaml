@@ -1,0 +1,258 @@
+workflows:
+  ios-testflight:
+    name: Frostborn iOS TestFlight
+    max_build_duration: 90
+    instance_type: mac_mini_m2
+    integrations:
+      app_store_connect: app_store_credentials
+    environment:
+      node: 20.18.0
+      xcode: latest
+      cocoapods: default
+      groups:
+        - signing               # CM_CERTIFICATE (base64 .p12), CM_CERTIFICATE_PASSWORD, CM_PROVISIONING_PROFILE
+        - frostborn_env         # placeholder for future env vars
+      vars:
+        APP_STORE_APP_ID: "6831935786"
+        BUNDLE_ID: com.cytbilisim.frostborn
+    triggering:
+      cancel_previous_builds: true
+
+    scripts:
+      # ── SIGNING ──────────────────────────────────────────────────────────────
+      - name: Set up keychain
+        script: |
+          keychain initialize
+          printf '%s' "$CM_CERTIFICATE" | base64 -D > /tmp/dist_cert.p12
+          keychain add-certificates --certificate /tmp/dist_cert.p12 --certificate-password "$CM_CERTIFICATE_PASSWORD"
+
+      # ── JS & CAPACITOR ───────────────────────────────────────────────────────
+      - name: Install JS dependencies
+        script: cd game && npm ci
+
+      - name: Build web
+        script: cd game && npm run build
+
+      - name: Sync Capacitor iOS
+        script: cd game && npx cap sync ios
+
+      # ── PROVISIONING PROFILE ─────────────────────────────────────────────────
+      - name: Set up provisioning profile
+        script: |
+          PROFILES_DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
+          mkdir -p "$PROFILES_DIR"
+          printf '%s' "$CM_PROVISIONING_PROFILE" | base64 -D > "$PROFILES_DIR/Frostborn.mobileprovision"
+
+      # ── NATIVE BUILD ─────────────────────────────────────────────────────────
+      - name: Pod install
+        script: cd game/ios/App && pod install
+
+      - name: Build IPA
+        script: |
+          LATEST=$(app-store-connect get-latest-testflight-build-number "$APP_STORE_APP_ID" 2>/dev/null || echo 1)
+          NEXT_BUILD=$(($LATEST + 1))
+          if [ "$NEXT_BUILD" -le 1 ]; then NEXT_BUILD=2; fi
+          echo "TestFlight latest: $LATEST  ->  building: $NEXT_BUILD"
+
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $NEXT_BUILD" game/ios/App/App/Info.plist
+          echo "CFBundleVersion patched to $NEXT_BUILD"
+
+          xcodebuild \
+            -workspace game/ios/App/App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -sdk iphoneos \
+            -archivePath /tmp/Frostborn.xcarchive \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM=6DQ86Y62WC \
+            PROVISIONING_PROFILE_SPECIFIER="Frostborn AppStore CM" \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            CURRENT_PROJECT_VERSION=$NEXT_BUILD \
+            archive \
+            2>&1 | tee /tmp/build_archive.log
+
+          BUILD_EXIT=${PIPESTATUS[0]}
+          if [ $BUILD_EXIT -ne 0 ]; then
+            echo "=== ARCHIVE FAILED - last 300 lines ==="
+            tail -300 /tmp/build_archive.log
+            exit $BUILD_EXIT
+          fi
+
+          export BUNDLE_ID
+          python3 -c "
+          import os
+          bundle = os.environ['BUNDLE_ID']
+          tpl = '''<?xml version=\"1.0\" encoding=\"UTF-8\"?>
+          <!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">
+          <plist version=\"1.0\">
+          <dict>
+            <key>method</key><string>app-store</string>
+            <key>teamID</key><string>6DQ86Y62WC</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>signingCertificate</key><string>Apple Distribution</string>
+            <key>stripSwiftSymbols</key><true/>
+            <key>uploadBitcode</key><false/>
+            <key>uploadSymbols</key><true/>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>{b}</key><string>Frostborn AppStore CM</string>
+            </dict>
+          </dict>
+          </plist>'''
+          print(tpl.format(b=bundle))
+          " > "$CM_BUILD_DIR/ExportOptions.plist"
+
+          xcodebuild \
+            -exportArchive \
+            -archivePath /tmp/Frostborn.xcarchive \
+            -exportOptionsPlist "$CM_BUILD_DIR/ExportOptions.plist" \
+            -exportPath /tmp/ipa \
+            2>&1 | tee /tmp/build_export.log
+
+          EXPORT_EXIT=${PIPESTATUS[0]}
+          if [ $EXPORT_EXIT -ne 0 ]; then
+            echo "=== EXPORT FAILED - last 200 lines ==="
+            tail -200 /tmp/build_export.log
+            exit $EXPORT_EXIT
+          fi
+
+    artifacts:
+      - /tmp/ipa/*.ipa
+      - /tmp/build_archive.log
+      - /tmp/build_export.log
+
+    publishing:
+      email:
+        recipients:
+          - ickmk1@gmail.com
+        notify:
+          success: true
+          failure: true
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+
+  android-release:
+    name: Frostborn Android Release
+    max_build_duration: 90
+    instance_type: mac_mini_m1
+    environment:
+      groups:
+        - frostborn_android     # CM_KEYSTORE_B64, CM_KEYSTORE_PASSWORD, CM_KEY_ALIAS, CM_KEY_PASSWORD, GCLOUD_SERVICE_ACCOUNT_CREDENTIALS
+        - frostborn_env
+      node: 20.18.0
+      java: 21
+      vars:
+        PACKAGE_NAME: "com.cytbilisim.frostborn"
+        VERSION_CODE_BASE: "1"
+
+    scripts:
+      - name: Install dependencies
+        script: cd game && npm ci
+
+      - name: Build web
+        script: cd game && npm run build
+
+      - name: Sync Capacitor Android
+        script: cd game && npx cap sync android
+
+      - name: Decode keystore from CM_KEYSTORE_B64
+        script: |
+          echo "$CM_KEYSTORE_B64" | base64 -d > game/android/app/upload-key.jks
+          xxd -l 4 game/android/app/upload-key.jks
+          keytool -list -keystore game/android/app/upload-key.jks \
+                  -storepass "$CM_KEYSTORE_PASSWORD" 2>&1 | grep -E "^Alias name" || true
+
+      - name: Set versionCode from Codemagic BUILD_NUMBER
+        script: |
+          python3 <<'PY'
+          import os, re
+          from pathlib import Path
+          vc = int(os.environ.get("BUILD_NUMBER","0")) + int(os.environ.get("VERSION_CODE_BASE","1"))
+          bg = Path("game/android/app/build.gradle")
+          s = bg.read_text()
+          s2, n = re.subn(r"versionCode\s+\d+", f"versionCode {vc}", s, count=1)
+          if n == 0: raise SystemExit("versionCode not found")
+          bg.write_text(s2)
+          print(re.search(r"versionCode\s+\d+", s2).group(0))
+          PY
+
+      - name: Wire keystore into gradle release signingConfig
+        script: |
+          python3 <<'PY'
+          import re, os
+          from pathlib import Path
+          bg = Path('game/android/app/build.gradle'); s = bg.read_text()
+          ksp = os.environ["CM_KEYSTORE_PASSWORD"]
+          ka  = os.environ["CM_KEY_ALIAS"]
+          kp  = os.environ.get("CM_KEY_PASSWORD","")
+          release_block = (
+              "        release {\n"
+              "            storeFile file('upload-key.jks')\n"
+              f"            storePassword '{ksp}'\n"
+              f"            keyAlias '{ka}'\n"
+              f"            keyPassword '{kp}'\n"
+              "        }\n"
+          )
+          debug_pattern = re.compile(r"(signingConfigs\s*\{\s*debug\s*\{[^}]*\})", re.DOTALL)
+          m = debug_pattern.search(s)
+          if not m: raise SystemExit("Could not locate signingConfigs.debug")
+          s = s[:m.end()] + "\n" + release_block + s[m.end():]
+          NEEDLE = "signingConfig signingConfigs.debug"; NEW = "signingConfig signingConfigs.release"
+          first = s.find(NEEDLE); second = s.find(NEEDLE, first + len(NEEDLE))
+          if second < 0: raise SystemExit("expected 2 occurrences of signingConfig debug")
+          s = s[:second] + NEW + s[second+len(NEEDLE):]
+          bg.write_text(s)
+          print("patched")
+          PY
+
+      - name: Bump JVM heap and disable lint abort
+        script: |
+          cat >> game/android/gradle.properties <<'EOF'
+
+          org.gradle.jvmargs=-Xmx6g -Dfile.encoding=UTF-8 -XX:+UseParallelGC
+          org.gradle.parallel=true
+          org.gradle.caching=true
+          android.experimental.lint.abortOnError=false
+          EOF
+          python3 <<'PY'
+          import re
+          from pathlib import Path
+          bg = Path("game/android/app/build.gradle")
+          s = bg.read_text()
+          if "lintOptions" not in s and re.search(r"^\s*lint\s*\{", s, re.MULTILINE) is None:
+              insert = "\n    lintOptions { abortOnError false; checkReleaseBuilds false; disable 'ExtraTranslation' }\n"
+              s2, n = re.subn(r"(android\s*\{)", r"\1" + insert, s, count=1)
+              if n:
+                  bg.write_text(s2)
+                  print("added lintOptions block")
+          else:
+              print("lint block already present")
+          PY
+
+      - name: Build Android AAB
+        script: |
+          export NODE_OPTIONS="--max-old-space-size=8192"
+          cd game/android
+          ./gradlew bundleRelease --no-daemon --stacktrace --info 2>&1 | tee /tmp/gradle.log
+          RC=${PIPESTATUS[0]}
+          cp /tmp/gradle.log ../../gradle-full.log || true
+          tail -500 /tmp/gradle.log || true
+          exit $RC
+
+    artifacts:
+      - game/android/app/build/outputs/**/*.aab
+      - game/android/app/build/outputs/**/mapping.txt
+      - gradle-full.log
+
+    publishing:
+      google_play:
+        credentials: $GCLOUD_SERVICE_ACCOUNT_CREDENTIALS
+        track: internal
+        submit_as_draft: true
+      email:
+        recipients:
+          - ickmk1@gmail.com
+        notify:
+          success: true
+          failure: true

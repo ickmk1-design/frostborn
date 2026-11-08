@@ -59,10 +59,10 @@ if not armatures:
     print("ERROR: No armature found.")
     sys.exit(1)
 arm = armatures[0]
-arm.rotation_mode = "XYZ"
+arm.rotation_mode = "QUATERNION"
 
-# Snap to Z=0 at rest pose
-arm.rotation_euler = (0.0, 0.0, 0.0)
+# Snap to Z=0 at rest pose — use identity quaternion (character already upright in Blender 5.2)
+arm.rotation_quaternion = mathutils.Quaternion()
 bpy.context.view_layer.update()
 arm_min_z = min((arm.matrix_world @ v.co).z
                 for mesh_obj in bpy.data.objects if mesh_obj.type == "MESH"
@@ -130,9 +130,9 @@ else:
 
 bpy.ops.object.select_all(action='DESELECT')
 
-# Scale axe to reasonable size relative to character (~0.15 world units)
-# Character is ~1.7 units tall; axe handle ~0.3 units
-AXE_SCALE = 0.15
+# Scale axe to reasonable size relative to character (~0.225 world units)
+# Character is ~1.7 units tall; axe handle ~0.3 units; 1.5x for visibility
+AXE_SCALE = 0.225
 
 for axe_obj in axe_objs:
     # Clear any existing parent from the axe import
@@ -183,7 +183,7 @@ cam_obj.location = (cam_x, cam_y, cam_z)
 
 aim_z = char_center_z
 direction = mathutils.Vector((0, 0, aim_z)) - cam_obj.location
-rot_quat  = direction.to_track_quat("-Z", "Z")
+rot_quat  = direction.to_track_quat("-Z", "Y")
 cam_obj.rotation_euler = rot_quat.to_euler()
 print(f"  Camera at ({cam_x:.2f},{cam_y:.2f},{cam_z:.2f}) aiming Z={aim_z:.2f}")
 
@@ -236,11 +236,11 @@ print(f"\nRendering {N_DIRS} dirs × {f_end - f_start + 1} frames …")
 
 for dir_idx in range(N_DIRS):
     rot_z = BASE_ROT_Z + DIR_STEP * dir_idx
-    arm.rotation_euler = (-math.pi/2, 0.0, rot_z)
-    arm.rotation_mode  = "XYZ"
+    _q_dir = mathutils.Quaternion((0, 0, 1), rot_z)
 
     for frame in range(f_start, f_end + 1):
         scene.frame_set(frame)
+        arm.rotation_quaternion = _q_dir
         bpy.context.view_layer.update()
 
         rw = arm.matrix_world @ root_bone.head

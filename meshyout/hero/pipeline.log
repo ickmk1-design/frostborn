@@ -1,0 +1,63 @@
+Character: hero  |  Source: character_hero_01.png  |  Out: C:\Users\ickmk\Frostborn\meshyout\hero
+============================================================
+Frostborn - Meshy Character Pipeline
+============================================================
+
+Credit breakdown:
+  Image-to-3D + 2K texture : 30 credits
+  Rigging                  :  0 credits
+  Animations (5 x 3cr)     : 15 credits
+  TOTAL                    : 45 credits
+
+Required: Meshy Pro ($20/mo, 1 000 credits)
+  https://app.meshy.ai/settings/api-keys
+
+[1] Image-to-3D + 2K PBR texture  (30 credits)
+    task_id = 01a18186-ff69-714f-a5d3-973cb43b60e7
+[2] Waiting for image-to-3D ...
+  image-to-3D: IN_PROGRESS 1%  image-to-3D: IN_PROGRESS 1%  image-to-3D: IN_PROGRESS 1%  image-to-3D: IN_PROGRESS 1%  image-to-3D: IN_PROGRESS 1%  image-to-3D: IN_PROGRESS 1%  image-to-3D: IN_PROGRESS 7%  image-to-3D: IN_PROGRESS 7%  image-to-3D: IN_PROGRESS 22%  image-to-3D: IN_PROGRESS 27%  image-to-3D: IN_PROGRESS 27%  image-to-3D: IN_PROGRESS 42%  image-to-3D: IN_PROGRESS 51%  image-to-3D: IN_PROGRESS 51%  image-to-3D: IN_PROGRESS 51%  image-to-3D: IN_PROGRESS 51%  image-to-3D: IN_PROGRESS 51%  image-to-3D: IN_PROGRESS 93%  image-to-3D: IN_PROGRESS 93%  image-to-3D: IN_PROGRESS 99%  image-to-3D: IN_PROGRESS 99%  image-to-3D: IN_PROGRESS 99%  image-to-3D: IN_PROGRESS 99%  image-to-3D: IN_PROGRESS 99%  image-to-3D: IN_PROGRESS 99%  image-to-3D: IN_PROGRESS 99%  image-to-3D: IN_PROGRESS 99%  image-to-3D: IN_PROGRESS 99%  image-to-3D: IN_PROGRESS 99%  image-to-3D: IN_PROGRESS 99%  image-to-3D: IN_PROGRESS 99%  image-to-3D: IN_PROGRESS 99%  image-to-3D: IN_PROGRESS 99%  image-to-3D: IN_PROGRESS 99%  image-to-3D: IN_PROGRESS 99%  image-to-3D: IN_PROGRESS 99%  image-to-3D: IN_PROGRESS 99%  image-to-3D: IN_PROGRESS 99%  image-to-3D: IN_PROGRESS 99%  image-to-3D: IN_PROGRESS 99%  image-to-3D: IN_PROGRESS 99%  image-to-3D: IN_PROGRESS 99%  image-to-3D: SUCCEEDED 100%  image-to-3D: SUCCEEDED          
+  Downloading -> character_model.glb ... 13800 KB
+[2b] Remesh to 200k faces  (0 credits) - required before rigging
+    task_id = 01a1818b-b203-7480-aa9a-f38aabce0c66
+[2c] Waiting for remesh ...
+  remesh: IN_PROGRESS 10%  remesh: IN_PROGRESS 20%  remesh: IN_PROGRESS 35%  remesh: IN_PROGRESS 46%  remesh: IN_PROGRESS 60%  remesh: IN_PROGRESS 71%  remesh: IN_PROGRESS 86%  remesh: IN_PROGRESS 90%  remesh: IN_PROGRESS 90%  remesh: IN_PROGRESS 90%  remesh: IN_PROGRESS 90%  remesh: IN_PROGRESS 90%  remesh: IN_PROGRESS 90%  remesh: IN_PROGRESS 90%  remesh: IN_PROGRESS 90%  remesh: IN_PROGRESS 90%  remesh: IN_PROGRESS 90%  remesh: IN_PROGRESS 90%  remesh: IN_PROGRESS 90%  remesh: IN_PROGRESS 90%  remesh: IN_PROGRESS 90%  remesh: IN_PROGRESS 90%  remesh: IN_PROGRESS 90%  remesh: SUCCEEDED 100%  remesh: SUCCEEDED          
+[3] Rigging  (0 credits) - walk & run animations included
+    task_id = 01a1818e-2820-74ce-9267-9f0c4121539d
+[4] Waiting for rigging ...
+  rigging: IN_PROGRESS 10%  rigging: IN_PROGRESS 26%  rigging: IN_PROGRESS 47%  rigging: IN_PROGRESS 63%  rigging: IN_PROGRESS 79%  rigging: IN_PROGRESS 90%  rigging: IN_PROGRESS 90%  rigging: IN_PROGRESS 90%  rigging: IN_PROGRESS 90%  rigging: SUCCEEDED 100%  rigging: SUCCEEDED          
+  Walk URL not found in response - keys: []
+[5] Animations via Animation API  (3 credits each x 5 remaining)
+  Requesting [walk] action_id=30 ...
+  [walk] task_id = 01a1818f-33d8-703c-ae10-ca5b919e4f19
+  Requesting [idle] action_id=335 ...
+  [idle] task_id = 01a1818f-3981-73d8-8a7d-e7661739460e
+  Requesting [chop] action_id=237 ...
+  [chop] task_id = 01a1818f-3e40-754a-9a10-f945cab46530
+  Requesting [carry_walk] action_id=551 ...
+  [carry_walk] task_id = 01a1818f-439c-7069-b29e-a9df5642fa4d
+  Requesting [cheer] action_id=59 ...
+  [cheer] task_id = 01a1818f-4817-7248-949f-31a589c4cf2f
+[6] Waiting for [walk] animation ...
+  walk: IN_PROGRESS 20%  walk: IN_PROGRESS 36%  walk: IN_PROGRESS 57%  walk: IN_PROGRESS 74%  walk: SUCCEEDED 100%  walk: SUCCEEDED          
+  Downloading -> character_walk.glb ... 25573 KB
+[6] Waiting for [idle] animation ...
+  idle: IN_PROGRESS 90%  idle: SUCCEEDED 100%  idle: SUCCEEDED          
+  Downloading -> character_idle.glb ... 25757 KB
+[6] Waiting for [chop] animation ...
+  chop: SUCCEEDED 100%  chop: SUCCEEDED          
+  Downloading -> character_chop.glb ... 25664 KB
+[6] Waiting for [carry_walk] animation ...
+  carry_walk: SUCCEEDED 100%  carry_walk: SUCCEEDED          
+  Downloading -> character_carry_walk.glb ... 25634 KB
+[6] Waiting for [cheer] animation ...
+  cheer: SUCCEEDED 100%  cheer: SUCCEEDED          
+  Downloading -> character_cheer.glb ... 25707 KB
+
+OK Pipeline complete!
+  character_walk.glb  (25573 KB)
+  character_idle.glb  (25757 KB)
+  character_chop.glb  (25664 KB)
+  character_carry_walk.glb  (25634 KB)
+  character_cheer.glb  (25707 KB)
+
+Next: blender --background --python render_sprites.py -- --anim walk --dirs 1

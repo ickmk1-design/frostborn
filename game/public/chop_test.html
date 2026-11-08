@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html><head><style>
+body { background:#1a1a2e; margin:8px; font-family:monospace; }
+.row { display:flex; gap:4px; margin-bottom:8px; align-items:flex-end; }
+.label { color:#9cf; font-size:11px; width:36px; flex-shrink:0; }
+canvas { image-rendering:pixelated; background:#2a2a3e; }
+p { color:#fc9; font-size:11px; margin:4px 0; }
+</style></head><body>
+<p>Worker chop — all 16 frames per direction (128px). Axe scale 0.225 (1.5×).</p>
+<div id="root">Loading…</div>
+<script>
+const DISPLAY = 128, N_FRAMES = 16, DIRS = [0,1,2,3,4,5,6,7];
+async function main() {
+  const bust = Date.now();
+  const [json, img] = await Promise.all([
+    fetch('/assets/sprites/worker_new/atlas.json?b='+bust).then(r=>r.json()),
+    new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=rej; i.src='/assets/sprites/worker_new/atlas_0.webp?b='+bust; }),
+  ]);
+  const byName={};
+  for(const f of json.textures[0].frames) byName[f.filename]=f;
+  const root=document.getElementById('root'); root.innerHTML='';
+  for(const d of DIRS){
+    const row=document.createElement('div'); row.className='row';
+    const lbl=document.createElement('div'); lbl.className='label'; lbl.textContent='d'+d;
+    row.appendChild(lbl);
+    for(let fi=0;fi<N_FRAMES;fi++){
+      const fd=byName['worker_chop_d'+d+'_f'+fi]; if(!fd) continue;
+      const cv=document.createElement('canvas'); cv.width=DISPLAY; cv.height=DISPLAY;
+      const ctx=cv.getContext('2d');
+      const {frame:fr,spriteSourceSize:sss,sourceSize:src}=fd;
+      const scale=DISPLAY/Math.max(src.w,src.h);
+      ctx.drawImage(img,fr.x,fr.y,fr.w,fr.h,sss.x*scale,sss.y*scale,sss.w*scale,sss.h*scale);
+      row.appendChild(cv);
+    }
+    root.appendChild(row);
+  }
+}
+main().catch(e=>{ document.getElementById('root').textContent='Error: '+e; });
+</script></body></html>

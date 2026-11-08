@@ -1,13 +1,17 @@
-node_modules/
+# Dependencies
 game/node_modules/
-game/dist/
-meshyout/hero/frames/
-meshyout/worker_new/frames/
-meshyout/*.glb
-meshyout/hero/*.glb
-meshyout/worker_new/*.glb
-preview/
-__pycache__/
-*.pyc
-.DS_Store
-Thumbs.db
+game/android/.gradle/
+game/android/app/build/
+game/android/app/release.jks
+game/android/local.properties
+game/ios/App/Pods/
+game/ios/App/App.xcworkspace/xcuserdata/
+game/.expo/
+# Env
+.env
+# Scripts (cleanup after use)
+set_ios_prices.js
+upload_play.js
+create_play_iaps.py
+# Keystore backup (keep primary at ~/frostborn-release.jks)
+frostborn-upload.jks

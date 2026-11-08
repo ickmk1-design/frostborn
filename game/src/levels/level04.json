@@ -1,0 +1,104 @@
+{
+  "name": "Level 4: The Alpha's Den",
+  "tileW": 80, "tileH": 40, "originX": 195, "originY": 152,
+  "player": {
+    "startIso": [8, 6], "speedPx": 130, "carryCapacity": 4,
+    "collectRangePx": 90, "dropRangePx": 85, "collectIntervalMs": 1400,
+    "maxHp": 10, "hpRegenPerSec": 0.4
+  },
+  "fire": {
+    "iso": [8, 7], "fuelMax": 100, "fuelDrainPerSec": 4.5,
+    "fuelPerLog": 20, "coinsPerLog": 5,
+    "freezeRatePerSec": 4, "freezeMax": 100
+  },
+  "trees": [
+    { "iso": [5, 4] }, { "iso": [11, 4] }, { "iso": [5, 10] }, { "iso": [11, 10] }
+  ],
+  "treeLogCooldownMs": 4500,
+  "buildPads": [
+    {
+      "id": "tent", "iso": [11, 10], "asset": "building_tent_canvas_01",
+      "costCoins": 100, "payRateCoinsPerSec": 14, "standRangePx": 70
+    }
+  ],
+  "frozenSurvivors": [
+    { "iso": [8, 20] }, { "iso": [5, 22] }, { "iso": [11, 22] }
+  ],
+  "survivorFollowRangePx": 90, "survivorThawRangePx": 120, "survivorThawTimeSec": 4,
+  "workerChopIntervalMs": 4500, "workerWalkSpeed": 90,
+  "walls": [
+    [3,3],[4,3],[5,3],[6,3],[7,3],[8,3],[9,3],[10,3],[11,3],[12,3],[13,3],
+    [3,4],[3,5],[3,6],[3,7],[3,8],[3,9],[3,10],[3,11],[3,12],
+    [13,4],[13,5],[13,6],[13,7],[13,8],[13,9],[13,10],[13,11],[13,12],
+    [4,12],[5,12],[6,12],[7,12],[10,12],[11,12],[12,12],[13,12]
+  ],
+  "gate": [[8,12],[9,12]],
+  "goal": { "survivorsToRescue": 3 },
+  "stages": [
+    { "type": "huntAnimals", "target": 1, "hintText": "Defeat the Alpha Wolf — watch for the summon at half HP!", "completedText": "Alpha Wolf slain! Now rescue survivors." },
+    { "type": "rescueSurvivors", "target": 3, "hintText": "Rescue 3 frozen survivors", "completedText": "Survivors rescued!" }
+  ],
+  "hintDurationSec": 30,
+  "animals": [
+    { "iso": [8, 20], "type": "alphawolf", "roamCenter": [8, 21], "roamRadius": 2.0 },
+    { "iso": [5, 17], "type": "wolf", "roamCenter": [5, 18], "roamRadius": 2.5 },
+    { "iso": [11, 17], "type": "wolf", "roamCenter": [11, 18], "roamRadius": 2.5 }
+  ],
+  "animalConfig": {
+    "wolf": {
+      "hp": 6, "speed": 62, "aggroSpeed": 105, "aggroRange": 115,
+      "circleDistancePx": 120, "attackRange": 88, "attackIntervalMs": 1200,
+      "biteIntervalMs": 1100, "biteDamage": 1, "knockbackPx": 145,
+      "meatDrop": 2, "meatPerHit": 1, "respawnDelaySec": 60,
+      "fleeBelowHpPct": 0.4, "fleeTimeSec": 4,
+      "windupMs": 360, "lungeSpeedPx": 350, "backoffDistPx": 150, "backoffSpeedPx": 215
+    },
+    "alphawolf": {
+      "hp": 20, "speed": 50, "aggroSpeed": 90, "aggroRange": 160,
+      "circleDistancePx": 155, "attackRange": 112, "attackIntervalMs": 1600,
+      "biteIntervalMs": 1400, "biteDamage": 2, "knockbackPx": 220,
+      "meatDrop": 6, "meatPerHit": 0, "respawnDelaySec": 180,
+      "fleeBelowHpPct": 0.0, "fleeTimeSec": 0,
+      "windupMs": 500, "lungeSpeedPx": 310, "backoffDistPx": 180, "backoffSpeedPx": 190,
+      "displayScale": 1.6, "furTint": 8926003,
+      "summonAtHpPct": 0.5, "summonCount": 2
+    }
+  },
+  "cookingConfig": { "cookTimeMs": 3500, "meatToCoins": 10 },
+  "decor": [
+    { "key": "prop_snow_pine_tree_01",   "iso": [2,  1] },
+    { "key": "prop_snow_pine_tree_01",   "iso": [4,  1] },
+    { "key": "prop_snow_pine_tree_01",   "iso": [10, 1] },
+    { "key": "prop_snow_pine_tree_01",   "iso": [12, 1] },
+    { "key": "prop_frozen_tree_dead_01", "iso": [3,  2] },
+    { "key": "prop_frozen_tree_dead_01", "iso": [9,  2] },
+    { "key": "prop_snow_pine_tree_01",   "iso": [1,  5] },
+    { "key": "prop_snow_pine_tree_01",   "iso": [1,  9] },
+    { "key": "prop_snow_pine_tree_01",   "iso": [15, 5] },
+    { "key": "prop_snow_pine_tree_01",   "iso": [15, 9] },
+    { "key": "prop_frozen_tree_dead_01", "iso": [2,  7] },
+    { "key": "prop_frozen_tree_dead_01", "iso": [14, 7] },
+    { "key": "prop_rock_cluster_01",     "iso": [0,  7] },
+    { "key": "prop_rock_cluster_01",     "iso": [16, 7] },
+    { "key": "prop_snow_bush_01",        "iso": [0,  4] },
+    { "key": "prop_snow_bush_01",        "iso": [16, 4] },
+    { "key": "prop_barrel_01",           "iso": [5,  5] },
+    { "key": "prop_barrel_01",           "iso": [11, 5] },
+    { "key": "prop_lantern_post_01",     "iso": [5,  6] },
+    { "key": "prop_lantern_post_01",     "iso": [11, 6] },
+    { "key": "prop_snow_pine_tree_01",   "iso": [4, 14] },
+    { "key": "prop_snow_pine_tree_01",   "iso": [12,14] },
+    { "key": "prop_frozen_tree_dead_01", "iso": [3, 16] },
+    { "key": "prop_frozen_tree_dead_01", "iso": [13,16] },
+    { "key": "tile_snow_drift_mound_01", "iso": [6, 14] },
+    { "key": "tile_snow_drift_mound_01", "iso": [10,14] },
+    { "key": "prop_rock_cluster_01",     "iso": [5, 19] },
+    { "key": "prop_rock_cluster_01",     "iso": [11,19] },
+    { "key": "prop_snow_pine_tree_01",   "iso": [4, 21] },
+    { "key": "prop_snow_pine_tree_01",   "iso": [12,21] },
+    { "key": "tile_snow_drift_mound_01", "iso": [7, 20] },
+    { "key": "tile_snow_drift_mound_01", "iso": [9, 23] },
+    { "key": "prop_warning_sign_red",    "iso": [8, 14] },
+    { "key": "prop_warning_sign_red",    "iso": [9, 14] }
+  ]
+}

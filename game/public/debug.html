@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Sprite Direction Debug</title>
+<style>
+  body { background: #1a1a2e; color: #eee; font-family: monospace; font-size: 11px; margin: 8px; }
+  h1 { color: #ff9; margin: 4px 0; }
+  h2 { color: #9cf; margin: 8px 0 2px; }
+  h3 { color: #fc9; margin: 6px 0 2px; }
+  .dir-row { display: flex; align-items: flex-end; gap: 2px; margin: 2px 0; flex-wrap: wrap; }
+  .dir-label { width: 110px; text-align: right; color: #aaa; padding-right: 6px; flex-shrink: 0; font-size: 10px; }
+  .frame-cell { display: flex; flex-direction: column; align-items: center; }
+  canvas.frame { image-rendering: pixelated; background: #2a2a3e; }
+  .frame-key { font-size: 8px; color: #888; margin-top: 1px; max-width: 56px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; }
+  .error { color: #f66; }
+  hr { border-color: #333; margin: 12px 0; }
+</style>
+</head>
+<body>
+<h1>Sprite Direction Debug — Hero &amp; Worker</h1>
+<p style="color:#999">Each row = one direction index. Frames are sorted numerically. Verify: facing must be consistent within each row.</p>
+<div id="root">Loading atlases…</div>
+
+<script>
+const DISPLAY = 96; // px per frame cell
+const MAX_FRAMES = 4; // only first N frames to fit screen
+
+async function loadAtlas(jsonUrl, imgUrl) {
+  const [json, img] = await Promise.all([
+    fetch(jsonUrl).then(r => r.json()),
+    new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = imgUrl; }),
+  ]);
+  const byName = {};
+  for (const f of json.textures[0].frames) byName[f.filename] = f;
+  return { img, byName, atlasW: json.textures[0].size.w, atlasH: json.textures[0].size.h };
+}
+
+function drawFrame(ctx, atlas, frameData) {
+  const { img } = atlas;
+  const { frame, spriteSourceSize: sss, sourceSize: src } = frameData;
+  const scale = DISPLAY / Math.max(src.w, src.h);
+  const dw = src.w * scale;
+  const dh = src.h * scale;
+  ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+  ctx.drawImage(
+    img,
+    frame.x, frame.y, frame.w, frame.h,                // src rect in atlas
+    sss.x * scale, sss.y * scale, sss.w * scale, sss.h * scale  // dst rect in canvas
+  );
+}
+
+function sortByFrameNum(keys) {
+  return [...keys].sort((a, b) => {
+    const na = parseInt(a.match(/_f(\d+)$/)?.[1] ?? '0');
+    const nb = parseInt(b.match(/_f(\d+)$/)?.[1] ?? '0');
+    return na - nb;
+  });
+}
+
+async function main() {
+  const root = document.getElementById('root');
+  root.innerHTML = '';
+
+  const chars = [
+    { name: 'hero',   json: '/assets/sprites/hero/atlas.json',       img: '/assets/sprites/hero/atlas_0.webp' },
+    { name: 'worker', json: '/assets/sprites/worker_new/atlas.json', img: '/assets/sprites/worker_new/atlas_0.webp' },
+  ];
+  const anims = ['walk', 'idle', 'chop', 'carry_walk', 'cheer'];
+
+  for (const ch of chars) {
+    const h2 = document.createElement('h2');
+    h2.textContent = `Character: ${ch.name}`;
+    root.appendChild(h2);
+
+    let atlas;
+    try { atlas = await loadAtlas(ch.json, ch.img); }
+    catch(e) { const p = document.createElement('p'); p.className='error'; p.textContent=`Failed to load ${ch.name}: ${e}`; root.appendChild(p); continue; }
+
+    for (const anim of anims) {
+      const h3 = document.createElement('h3');
+      h3.textContent = `  ${anim}`;
+      root.appendChild(h3);
+
+      for (let d = 0; d < 8; d++) {
+        const prefix = `${ch.name}_${anim}_d${d}_`;
+        const frameKeys = sortByFrameNum(Object.keys(atlas.byName).filter(k => k.startsWith(prefix)));
+
+        const row = document.createElement('div');
+        row.className = 'dir-row';
+
+        const lbl = document.createElement('div');
+        lbl.className = 'dir-label';
+        lbl.textContent = `d${d} (${frameKeys.length}f)`;
+        row.appendChild(lbl);
+
+        if (frameKeys.length === 0) {
+          const err = document.createElement('span');
+          err.className = 'error';
+          err.textContent = 'NO FRAMES FOUND';
+          row.appendChild(err);
+        }
+
+        for (const key of frameKeys.slice(0, MAX_FRAMES)) {
+          const fd = atlas.byName[key];
+          const cell = document.createElement('div');
+          cell.className = 'frame-cell';
+
+          const cv = document.createElement('canvas');
+          cv.className = 'frame';
+          cv.width = DISPLAY;
+          cv.height = DISPLAY;
+          drawFrame(cv.getContext('2d'), atlas, fd);
+
+          const lk = document.createElement('div');
+          lk.className = 'frame-key';
+          lk.textContent = key.replace(`${ch.name}_${anim}_d${d}_`, 'f');
+          lk.title = key;
+
+          cell.appendChild(cv);
+          cell.appendChild(lk);
+          row.appendChild(cell);
+        }
+        root.appendChild(row);
+      }
+    }
+    const hr = document.createElement('hr');
+    root.appendChild(hr);
+  }
+}
+
+main().catch(e => { document.getElementById('root').innerHTML = `<p class="error">Error: ${e}</p>`; });
+</script>
+</body>
+</html>

@@ -56,9 +56,40 @@ export default class BootScene extends Phaser.Scene {
     // Character texture atlases (optimized WebP, trimmed, 4096×4096 max)
     this.load.multiatlas('hero',   'assets/sprites/hero/atlas.json',       'assets/sprites/hero/');
     this.load.multiatlas('worker', 'assets/sprites/worker_new/atlas.json', 'assets/sprites/worker_new/');
+
+    // Animal sprite atlases — optional, skip gracefully if not yet rendered
+    this.load.on('loaderror', (file: Phaser.Loader.File) => {
+      if (file.key === 'wolf') console.warn('[Frostborn] Wolf atlas not found — using static sprite fallback');
+      if (file.key === 'deer') console.warn('[Frostborn] Deer atlas not found — using static sprite fallback');
+    });
+    this.load.multiatlas('wolf', 'assets/sprites/wolf/atlas.json', 'assets/sprites/wolf/');
+    this.load.multiatlas('deer', 'assets/sprites/deer/atlas.json', 'assets/sprites/deer/');
+
+    // Generated assets (optional — skip gracefully if missing)
+    for (const k of ['prop_rock_cluster_01', 'prop_snow_bush_01', 'prop_cliff_edge_01', 'prop_lantern_post_01']) {
+      this.load.image(k, `assets/${k}.png`);
+    }
+
+    // Sounds — OGG for most browsers, M4A fallback for Safari/iOS
+    const SFX = [
+      'snd_axe_chop', 'snd_log_drop', 'snd_coin_pickup',
+      'snd_fire_loop', 'snd_wind_loop', 'snd_ice_shatter',
+      'snd_build_complete', 'snd_win_jingle',
+    ];
+    for (const k of SFX) {
+      this.load.audio(k, [`assets/audio/${k}.ogg`, `assets/audio/${k}.m4a`]);
+    }
   }
 
   create(): void {
-    this.scene.start('GameScene');
+    const params = new URLSearchParams(window.location.search);
+    const levelParam = params.get('level');
+    if (levelParam) {
+      const num = parseInt(levelParam, 10);
+      const key = `level${String(num).padStart(2, '0')}`;
+      this.scene.start('GameScene', { levelKey: key, levelNum: num });
+    } else {
+      this.scene.start('LevelSelectScene');
+    }
   }
 }

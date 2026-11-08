@@ -1,0 +1,18 @@
+{
+  "character": "worker_new",
+  "anim": "cheer",
+  "frameW": 192,
+  "frameH": 192,
+  "nDirs": 8,
+  "nFrames": 113,
+  "dirLabels": [
+    "SE",
+    "S",
+    "SW",
+    "W",
+    "NW",
+    "N",
+    "NE",
+    "E"
+  ]
+}

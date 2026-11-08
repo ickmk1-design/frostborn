@@ -1,0 +1,14 @@
+{
+  "measured_from": "cone centroid vs character centroid in verify_cones renders",
+  "screen_convention": "right=0deg, down=90deg",
+  "angles": {
+    "0": 123.7,
+    "1": 209.9,
+    "2": 248.0,
+    "3": 262.4,
+    "4": 253.0,
+    "5": 252.7,
+    "6": 246.0,
+    "7": 147.9
+  }
+}
