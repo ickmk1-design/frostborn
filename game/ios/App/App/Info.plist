@@ -46,5 +46,7 @@
 	<string>We use this to show you relevant ads and keep the game free.</string>
 	<key>GADApplicationIdentifier</key>
 	<string>ca-app-pub-2172235968793446~4224628453</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 </dict>
 </plist>
