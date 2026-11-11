@@ -162,8 +162,8 @@ async function testShop(browser, label) {
   await waitCanvas(page);
   await page.waitForTimeout(10000);
 
-  // Click Shop button (at y=802)
-  await page.mouse.click(195, 802);
+  // Click Shop button — responsive layout: btnStartY=H*0.47, btnGap=btnH*1.3, btnH=H*0.07 → ~473
+  await page.mouse.click(W / 2, Math.round(H * 0.47 + H * 0.07 * 1.3));
   await page.waitForTimeout(2000);
 
   if (col.jsErrors.length === 0) pass(`[${label}] Shop opens — no JS errors`);
@@ -334,6 +334,380 @@ async function testReloadProgress(browser, label) {
   await ctx.close();
 }
 
+// ── Direction test ───────────────────────────────────────────────────────────
+// CHAR_DIR_ANGLES=[90.0,28.8,1.3,334.1,270.0,205.9,178.7,151.2] (ELEV=32°)
+// WOLF_DIR_ANGLES=[329.6,270.0,239.6,209.1,149.6,90.0,59.6,29.1] (ELEV=36°)
+// Key: for each movement vector compute expected dir, verify sprite frame matches.
+const DIR_CASES = [
+  // [kR,kD,kL,kU, expectedHeroDir, expectedWolfDir, label]
+  [1,0,0,0, 2, 7, 'Right'],
+  [1,1,0,0, 1, 0, 'Right+Down'],
+  [0,1,0,0, 0, 1, 'Down'],
+  [0,1,1,0, 7, 2, 'Left+Down'],
+  [0,0,1,0, 6, 3, 'Left'],
+  [0,0,1,1, 5, 4, 'Left+Up'],
+  [0,0,0,1, 4, 5, 'Up'],
+  [1,0,0,1, 3, 6, 'Right+Up'],
+];
+
+async function testDirections(browser, label) {
+  console.log(`\n--- Direction Facing [${label}] ---`);
+  const ctx = await browser.newContext({ viewport: VIEWPORT });
+  const page = await ctx.newPage();
+  const col = makeCollectors(page);
+
+  await page.goto(`${BASE}/?noaudio=1`);
+  await waitCanvas(page);
+
+  // Boot past loading screen — wait for any non-boot/non-loading scene
+  let booted = false;
+  for (let i = 0; i < 40; i++) {
+    await page.waitForTimeout(500);
+    const active = await page.evaluate(() => {
+      const g = window.__game;
+      if (!g) return [];
+      return g.scene.scenes.filter(s => s.sys.isActive()).map(s => s.sys.settings.key);
+    });
+    if (active.length > 0 && active.some(k => k && !k.toLowerCase().includes('boot') && !k.toLowerCase().includes('load'))) {
+      booted = true; break;
+    }
+  }
+  if (!booted) { fail(`[${label}] Direction test: game never booted past loading`); await ctx.close(); return; }
+
+  // Start GameScene level01
+  await page.evaluate(() => {
+    const g = window.__game;
+    ['BootScene','MainMenuScene','SettingsScene','LevelSelectScene','GameScene','UIScene','WinScene','LoseScene','ShopScene']
+      .forEach(k => { try { g.scene.stop(k); } catch(e){} });
+    g.scene.start('GameScene', { levelKey: 'level01', levelNum: 1 });
+  });
+
+  // Wait for GameScene active
+  let gsOk = false;
+  for (let i = 0; i < 40; i++) {
+    await page.waitForTimeout(500);
+    const active = await page.evaluate(() => {
+      const g = window.__game;
+      if (!g) return [];
+      return g.scene.scenes.filter(s => s.sys.isActive()).map(s => s.sys.settings.key);
+    });
+    if (active.some(k => k && k.includes('GameScene'))) { gsOk = true; break; }
+  }
+  if (!gsOk) { fail(`[${label}] Direction test: GameScene never became active`); await ctx.close(); return; }
+  await page.waitForTimeout(1500);
+
+  // Click canvas once to unlock input focus
+  await page.mouse.click(W / 2, H / 2);
+  await page.waitForTimeout(300);
+
+  let failures = 0;
+  for (const [kR, kD, kL, kU, expHero, expWolf, dirLabel] of DIR_CASES) {
+    // Reset player to camp center so wall proximity doesn't affect direction
+    await page.evaluate(() => {
+      const sc = window.__game?.scene.getScene('GameScene');
+      if (!sc) return;
+      const cfg = sc.levelCfg || { originX: 195, originY: 152 };
+      const ox = cfg.originX ?? 195, oy = cfg.originY ?? 152;
+      sc.playerLX = ox + (8 - 7) * 40;
+      sc.playerLY = oy + (8 + 7) * 20;
+      if (sc.playerSprite) { sc.playerSprite.x = sc.playerLX; sc.playerSprite.y = sc.playerLY; }
+    });
+    await page.waitForTimeout(100);
+
+    const keys = [];
+    if (kR) keys.push('ArrowRight');
+    if (kD) keys.push('ArrowDown');
+    if (kL) keys.push('ArrowLeft');
+    if (kU) keys.push('ArrowUp');
+
+    for (const k of keys) { await page.keyboard.down(k); await page.waitForTimeout(30); }
+    await page.waitForTimeout(600); // past 100ms hysteresis + settle
+
+    const frameKey = await page.evaluate(() => {
+      const g = window.__game;
+      const scene = g && g.scene.getScene('GameScene');
+      if (!scene || !scene.playerSprite) return null;
+      return scene.playerSprite.anims.currentAnim ? scene.playerSprite.anims.currentAnim.key : null;
+    });
+
+    for (const k of keys) await page.keyboard.up(k);
+    await page.waitForTimeout(200);
+
+    if (!frameKey) {
+      warn(`[${label}] Dir ${dirLabel}: no anim frame (player may be stuck)`);
+      continue;
+    }
+    // Frame key: e.g. "hero_walk_d2" or "hero_walk_d2_f0" — extract dir index
+    const m = frameKey.match(/_d(\d+)/);
+    if (!m) { warn(`[${label}] Dir ${dirLabel}: unrecognised frame key ${frameKey}`); continue; }
+    const actualDir = parseInt(m[1], 10);
+    if (actualDir === expHero) {
+      pass(`[${label}] Hero dir ${dirLabel}: facing d${actualDir} ✓`);
+    } else {
+      fail(`[${label}] Hero dir ${dirLabel}: expected d${expHero} got d${actualDir} (frame: ${frameKey})`);
+      failures++;
+    }
+  }
+
+  if (col.jsErrors.length > 0) fail(`[${label}] Direction test JS errors`, col.jsErrors.slice(0,3).join(' | '));
+  await ctx.close();
+}
+
+// ── Shop button touch test ────────────────────────────────────────────────────
+// Verifies every price button fires the correct response with real touch events.
+// IAP buttons → 'purchasesAppOnly' toast; coin buttons with 0 coins → 'notEnoughCoins' toast.
+// H=844 W=390 layout (approximated from create() geometry):
+//   featuredH=139, rowH=83, gap=8, listStartY=97, btnX≈318
+//   btn screen-y = listStartY + card_offset + cardH/2
+const SHOP_BTN_CASES = [
+  // [itemId, screenY, expectToast, isCoin]
+  ['starter_pack',  166, 'purchasesAppOnly', false],
+  ['remove_ads',    285, 'purchasesAppOnly', false],
+  ['coins_small',   376, 'purchasesAppOnly', false],
+  ['coins_medium',  467, 'purchasesAppOnly', false],
+  ['coins_large',   558, 'purchasesAppOnly', false],
+  ['extra_worker',  649, 'notEnoughCoins',   true],
+  ['carry_plus2',   740, 'notEnoughCoins',   true],
+  ['fast_chop',     831, 'notEnoughCoins',   true],
+];
+// Accept either locale — test machine may be Turkish
+const TOAST_VARIANTS = {
+  purchasesAppOnly: ['Purchases only work in the app', 'Satın alımlar yalnızca uygulamada çalışır'],
+  notEnoughCoins:   ['Not enough coins', 'Yeterli jeton yok'],
+};
+const BTN_X = 318;
+
+async function testShopButtons(browser, label) {
+  console.log(`\n--- Shop Button Touch [${label}] ---`);
+  const ctx = await browser.newContext({
+    viewport: { width: W, height: H },
+    hasTouch: true,
+    isMobile: true,
+    userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+  });
+  const page = await ctx.newPage();
+  const col = makeCollectors(page);
+
+  // Set coins to 0 so coin-upgrade buttons show notEnoughCoins
+  await page.goto(`${BASE}/?noaudio=1`);
+  await waitCanvas(page);
+  await page.evaluate(() => {
+    localStorage.setItem('frostborn_economy', JSON.stringify({ coins: 0, purchasedUpgrades: [], iapOwned: [] }));
+  });
+
+  // Boot
+  let booted = false;
+  for (let i = 0; i < 40; i++) {
+    await page.waitForTimeout(500);
+    const active = await page.evaluate(() => {
+      const g = window.__game; if (!g) return [];
+      return g.scene.scenes.filter(s => s.sys.isActive()).map(s => s.sys.settings.key);
+    });
+    if (active.some(k => k && !k.toLowerCase().includes('boot') && !k.toLowerCase().includes('load'))) { booted = true; break; }
+  }
+  if (!booted) { fail(`[${label}] Shop touch test: game never booted`); await ctx.close(); return; }
+
+  // Start ShopScene
+  await page.evaluate(() => {
+    const g = window.__game;
+    ['BootScene','MainMenuScene','SettingsScene','LevelSelectScene','GameScene','UIScene','WinScene','LoseScene','ShopScene']
+      .forEach(k => { try { g.scene.stop(k); } catch(e){} });
+    g.scene.start('ShopScene');
+  });
+  let shopOk = false;
+  for (let i = 0; i < 20; i++) {
+    await page.waitForTimeout(500);
+    const active = await page.evaluate(() => {
+      const g = window.__game; if (!g) return [];
+      return g.scene.scenes.filter(s => s.sys.isActive()).map(s => s.sys.settings.key);
+    });
+    if (active.some(k => k && k.includes('Shop'))) { shopOk = true; break; }
+  }
+  if (!shopOk) { fail(`[${label}] Shop touch test: ShopScene never active`); await ctx.close(); return; }
+  await page.waitForTimeout(800);
+
+  for (const [itemId, screenY, expectKey, ] of SHOP_BTN_CASES) {
+    // Clear last toast
+    await page.evaluate(() => {
+      const g = window.__game;
+      const s = g && g.scene.getScene('ShopScene');
+      if (s) s.lastToastMsg = '';
+    });
+    // Tap with touch
+    await page.tap('canvas', { position: { x: BTN_X, y: screenY } });
+    await page.waitForTimeout(600);
+
+    const got = await page.evaluate(() => {
+      const g = window.__game;
+      const s = g && g.scene.getScene('ShopScene');
+      return s ? s.lastToastMsg : '';
+    });
+    const variants = TOAST_VARIANTS[expectKey];
+    if (variants.includes(got)) {
+      pass(`[${label}] Shop tap ${itemId}: toast ✓ ("${got}")`);
+    } else if (got === '') {
+      fail(`[${label}] Shop tap ${itemId}: no toast shown (tap not registered)`);
+    } else {
+      fail(`[${label}] Shop tap ${itemId}: unexpected toast "${got}"`);
+    }
+  }
+
+  if (col.jsErrors.length > 0) fail(`[${label}] Shop touch JS errors`, col.jsErrors.slice(0,3).join(' | '));
+  await ctx.close();
+}
+
+// ── Decor / tree overlap check ────────────────────────────────────────────────
+// Verifies no decor or tree in any level JSON overlaps: build pads, fire position,
+// or other gameplay spots. Uses ISO distance — anything closer than 1.0 iso unit fails.
+async function testDecorOverlap() {
+  console.log('\n--- Decor/Tree Overlap Check ---');
+  const path = require('path');
+  const fs = require('fs');
+  const levelsDir = path.join(__dirname, 'src', 'levels');
+  const levelFiles = fs.readdirSync(levelsDir).filter(f => f.endsWith('.json'));
+  let failures = 0;
+  const ISO_OVERLAP = 1.0; // ISO units — closer than this = overlap
+  for (const lf of levelFiles) {
+    const cfg = JSON.parse(fs.readFileSync(path.join(levelsDir, lf), 'utf8'));
+    const reserved = [];
+    // Fire
+    if (cfg.fire?.iso) reserved.push({ iso: cfg.fire.iso, label: 'fire' });
+    // Build pads
+    for (const bp of (cfg.buildPads ?? [])) {
+      if (bp.iso) reserved.push({ iso: bp.iso, label: `buildPad(${bp.id})` });
+    }
+    // Check trees
+    for (const t of (cfg.trees ?? [])) {
+      for (const r of reserved) {
+        const dix = t.iso[0] - r.iso[0]; const diy = t.iso[1] - r.iso[1];
+        const dist = Math.sqrt(dix*dix + diy*diy);
+        if (dist < ISO_OVERLAP) {
+          fail(`[${lf}] Tree at [${t.iso}] overlaps ${r.label} at [${r.iso}] (dist=${dist.toFixed(2)} iso)`);
+          failures++;
+        }
+      }
+    }
+    // Check decor
+    for (const d of (cfg.decor ?? [])) {
+      for (const r of reserved) {
+        const dix = d.iso[0] - r.iso[0]; const diy = d.iso[1] - r.iso[1];
+        const dist = Math.sqrt(dix*dix + diy*diy);
+        if (dist < ISO_OVERLAP) {
+          fail(`[${lf}] Decor '${d.key}' at [${d.iso}] overlaps ${r.label} at [${r.iso}] (dist=${dist.toFixed(2)} iso)`);
+          failures++;
+        }
+      }
+    }
+    if (failures === 0) pass(`[${lf}] No decor/tree overlaps build pads or fire`);
+  }
+}
+
+// ── Wolf / Deer Direction Facing ──────────────────────────────────────────────
+// Uses the __testAnimalDir helper exposed by GameScene (exposed from TypeScript side).
+// Verifies that wolfDir() maps each of 8 screen movement velocities to the expected
+// animation direction index — same mapping as hero since wolf sprites share convention.
+async function testAnimalDirections(browser, label) {
+  console.log(`\n--- Animal Direction Facing [${label}] ---`);
+  const ctx = await browser.newContext({ viewport: VIEWPORT });
+  const page = await ctx.newPage();
+  const col = makeCollectors(page);
+
+  await page.goto(`${BASE}/?noaudio=1`);
+  await waitCanvas(page);
+
+  let booted = false;
+  for (let i = 0; i < 40; i++) {
+    await page.waitForTimeout(500);
+    const active = await page.evaluate(() => {
+      const g = window.__game; if (!g) return [];
+      return g.scene.scenes.filter(s => s.sys.isActive()).map(s => s.sys.settings.key);
+    });
+    if (active.some(k => k && !k.toLowerCase().includes('boot') && !k.toLowerCase().includes('load'))) { booted = true; break; }
+  }
+  if (!booted) { fail(`[${label}] Animal dir test: game never booted`); await ctx.close(); return; }
+
+  // Start level04 (has wolf + deer = level with animals)
+  await page.evaluate(() => {
+    const g = window.__game;
+    ['BootScene','MainMenuScene','SettingsScene','LevelSelectScene','GameScene','UIScene','WinScene','LoseScene','ShopScene']
+      .forEach(k => { try { g.scene.stop(k); } catch(e){} });
+    g.scene.start('GameScene', { levelKey: 'level04', levelNum: 4 });
+  });
+
+  let gsOk = false;
+  for (let i = 0; i < 40; i++) {
+    await page.waitForTimeout(500);
+    const active = await page.evaluate(() => {
+      const g = window.__game; if (!g) return [];
+      return g.scene.scenes.filter(s => s.sys.isActive()).map(s => s.sys.settings.key);
+    });
+    if (active.some(k => k && k.includes('GameScene'))) { gsOk = true; break; }
+  }
+  if (!gsOk) { fail(`[${label}] Animal dir test: GameScene never active`); await ctx.close(); return; }
+  await page.waitForTimeout(1500);
+
+  // Check if wolf atlas loaded
+  const hasAtlases = await page.evaluate(() => {
+    const g = window.__game;
+    return { wolf: g.textures.exists('wolf'), deer: g.textures.exists('deer') };
+  });
+
+  // DIR_CASES: [velX, velY, expectedDir, label]
+  const ANIM_DIR_CASES = [
+    [130,    0,    2, 'Right'],
+    [91.9,  91.9,  1, 'Right+Down'],
+    [0,    130,    0, 'Down'],
+    [-91.9, 91.9,  7, 'Left+Down'],
+    [-130,   0,    6, 'Left'],
+    [-91.9,-91.9,  5, 'Left+Up'],
+    [0,   -130,    4, 'Up'],
+    [91.9, -91.9,  3, 'Right+Up'],
+  ];
+
+  for (const [atlasKey, animalIdx] of [['wolf', 0], ['deer', -1]]) {
+    if (atlasKey === 'wolf' && !hasAtlases.wolf) {
+      warn(`[${label}] Wolf atlas not loaded — skipping wolf dir test`); continue;
+    }
+    if (atlasKey === 'deer' && !hasAtlases.deer) {
+      warn(`[${label}] Deer atlas not loaded — skipping deer dir test`); continue;
+    }
+
+    // Find first animal with this atlasKey
+    const idx = await page.evaluate((ak) => {
+      const sc = window.__game?.scene.getScene('GameScene');
+      if (!sc) return -1;
+      return sc.animals?.findIndex(a => a.atlasKey === ak) ?? -1;
+    }, atlasKey);
+
+    if (idx < 0) {
+      warn(`[${label}] No ${atlasKey} animal in level04 — skipping`); continue;
+    }
+
+    for (const [velX, velY, expDir, dirLabel] of ANIM_DIR_CASES) {
+      const animKey = await page.evaluate(({ i, vx, vy }) => {
+        const sc = window.__game?.scene.getScene('GameScene');
+        if (!sc || !sc.__testAnimalDir) return null;
+        return sc.__testAnimalDir(i, vx, vy);
+      }, { i: idx, vx: velX, vy: velY });
+
+      if (!animKey) {
+        warn(`[${label}] ${atlasKey} dir ${dirLabel}: no anim key returned`); continue;
+      }
+      const m = animKey.match(/_d(\d+)/);
+      if (!m) { warn(`[${label}] ${atlasKey} dir ${dirLabel}: unrecognised key ${animKey}`); continue; }
+      const actual = parseInt(m[1], 10);
+      if (actual === expDir) {
+        pass(`[${label}] ${atlasKey} dir ${dirLabel}: d${actual} ✓`);
+      } else {
+        fail(`[${label}] ${atlasKey} dir ${dirLabel}: expected d${expDir} got d${actual} (${animKey})`);
+      }
+    }
+  }
+
+  if (col.jsErrors.length > 0) fail(`[${label}] Animal dir JS errors`, col.jsErrors.slice(0,3).join(' | '));
+  await ctx.close();
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 (async () => {
   const server = await serve(DIST, PORT);
@@ -360,6 +734,9 @@ async function testReloadProgress(browser, label) {
     // ── 4. Shop ──
     if (wkOk) await testShop(wk, 'WebKit');
 
+    // ── 4b. Shop button touch ──
+    if (wkOk) await testShopButtons(wk, 'WebKit');
+
     // ── 5. Sound & mute ──
     if (wkOk) await testSoundMute(wk, 'WebKit');
 
@@ -369,13 +746,22 @@ async function testReloadProgress(browser, label) {
     // ── 7. Progress persistence ──
     await testReloadProgress(wk, 'WebKit');
 
-    // ── 8. Safe areas (geometry analysis) ──
+    // ── 8. Direction facing ──
+    if (wkOk) await testDirections(wk, 'WebKit');
+
+    // ── 9. Decor/tree overlap check ──
+    await testDecorOverlap();
+
+    // ── 10. Animal direction facing ──
+    if (wkOk) await testAnimalDirections(wk, 'WebKit');
+
+    // ── 12. Safe areas (geometry analysis) ──
     await testSafeAreas();
 
     // Manual items
     console.log(`\n--- IAP & Ad Calls ---`);
     manual('IAP calls fail gracefully in browser (no crash) — Capacitor guard returns no-op on web');
-    manual('Ad calls fail gracefully in browser — showRewarded() gives instant reward on web');
+    manual('Ad reward on native: grant ONLY after full watch; partial close → no reward (test on device)');
 
   } finally {
     wk && await wk.close();

@@ -15,6 +15,8 @@ import level13 from '../levels/level13.json';
 import level14 from '../levels/level14.json';
 import level15 from '../levels/level15.json';
 import { isoToScreen, screenToIso, TILE_W, TILE_H } from '../isoUtils';
+import { safePlay, safeAdd } from '../utils/safeMedia';
+import { t, tFmt, getLang } from '../i18n';
 
 const LEVEL_CONFIGS: Record<string, any> = {
   level01, level02, level03, level04, level05,
@@ -110,6 +112,7 @@ export default class GameScene extends Phaser.Scene {
   private pendingDir = -1;
   private pendingDirMs = 0;
 
+  private _loadingUI: Phaser.GameObjects.GameObject[] = [];
   private trees: TreeNode[] = [];
   private fireSprite!: Phaser.GameObjects.Image;
   private fireX = 0; private fireY = 0;
@@ -119,6 +122,9 @@ export default class GameScene extends Phaser.Scene {
   private padGfx!: Phaser.GameObjects.Graphics;
   private padLabel!: Phaser.GameObjects.Text;
   private padX = 0; private padY = 0;
+  private signSW = 164;
+  private signSX = 0;
+  private signSY = 0;
   private tentSprite: Phaser.GameObjects.Image | null = null;
 
   private coins = 0; private fuel = 0;
@@ -167,7 +173,7 @@ export default class GameScene extends Phaser.Scene {
   private playerKnockVY = 0;
   private playerHpBarGfx!: Phaser.GameObjects.Graphics;
   private animalsKilled = 0;
-  private goalStages: Array<{type:string; target:number|string; hintText:string; completedText?:string}> = [];
+  private goalStages: Array<{type:string; target:number|string; hintText:string; hintTextTr?:string; completedText?:string}> = [];
   private currentStageIdx = 0;
   private stageBannerMs = 0;
   private stageBannerText = '';
@@ -187,9 +193,105 @@ export default class GameScene extends Phaser.Scene {
     this.currentLevelNum = data?.levelNum ?? 1;
   }
 
+  // ── preload ───────────────────────────────────────────────────────────────
+  // All heavy game assets live here so the main menu opens instantly.
+  // Phaser caches every key — restarts and level changes skip the download.
+
+  preload(): void {
+    const W = this.scale.width; const H = this.scale.height;
+    const CX = W / 2;
+
+    // Loading UI — fixed to camera so it doesn't move with the iso world
+    const bg = this.add.graphics().setScrollFactor(0).setDepth(1000);
+    bg.fillStyle(0x0a0f1e, 1).fillRect(0, 0, W, H);
+
+    const barW = Math.min(W * 0.72, 300);
+    const barH = 14;
+    const barX = CX - barW / 2;
+    const barY = H / 2 + 20;
+
+    const barBg = this.add.graphics().setScrollFactor(0).setDepth(1001);
+    barBg.fillStyle(0x223355, 1).fillRoundedRect(barX, barY, barW, barH, barH / 2);
+
+    const barFill = this.add.graphics().setScrollFactor(0).setDepth(1001);
+
+    const loadingText = this.add.text(CX, barY - 18, t('loading'), {
+      fontFamily: "GameFont, cursive", fontSize: '18px', color: '#aaddff',
+    }).setOrigin(0.5, 1).setScrollFactor(0).setDepth(1001);
+
+    this.load.on('progress', (v: number) => {
+      barFill.clear();
+      barFill.fillStyle(0x44aaff, 1).fillRoundedRect(barX, barY, barW * v, barH, barH / 2);
+    });
+
+    // Keep refs so create() destroys them after the game world is ready
+    this._loadingUI = [bg, barBg, barFill, loadingText];
+
+    const GAME_ASSETS = [
+      'building_archway_gate_01', 'building_barracks_01',
+      'building_central_tower_01', 'building_conveyor_belt_system', 'building_furnace_heating_01',
+      'building_giant_wheel_grinder', 'building_log_cabin_01', 'building_lumber_mill_01',
+      'building_perimeter_wall_wooden', 'building_research_lab_01', 'building_road_grid_01',
+      'building_small_hut_01', 'building_storage_crate_stacks', 'building_tent_canvas_01',
+      'building_tunnel_arch_01', 'building_turret_defense_01', 'building_upgrade_scaffold_01',
+      'building_watchtower_01', 'character_enemy_troop_01', 'character_survivor_worker_01',
+      'character_survivor_walk_left', 'character_survivor_walk_right',
+      'character_survivor_back_idle', 'character_survivor_back_left', 'character_survivor_back_right',
+      'effect_blizzard_snow_particles', 'effect_fire_explosion_01', 'effect_ice_freeze_shatter',
+      'effect_smoke_chimney_01', 'effect_sparkle_reward_burst', 'enemy_grey_wolf_01',
+      'prop_barrel_01', 'prop_bench_01', 'prop_blue_resource_crystal', 'prop_campfire_01',
+      'prop_frozen_tree_dead_01', 'prop_green_resource_crate', 'prop_igloo_01',
+      'prop_meat_table_01', 'prop_snow_pine_tree_01', 'prop_vehicle_excavator_01',
+      'prop_vehicle_snowmobile_01', 'prop_warning_sign_red',
+      'resource_food_icon_green', 'resource_meat_icon_red', 'resource_meat_log_roll_01',
+      'resource_meat_pile_01', 'resource_wood_logs_01', 'resource_wood_planks_01',
+      'tile_base_floor_dirt_01', 'tile_frozen_ground_01', 'tile_road_paved_urban_01',
+      'tile_snow_drift_mound_01',
+    ];
+
+    for (const key of GAME_ASSETS) {
+      if (!this.textures.exists(key))
+        this.load.image(key, `assets/${key}.webp`);
+    }
+
+    if (!this.textures.exists('hero'))
+      this.load.multiatlas('hero', 'assets/sprites/hero/atlas.json', 'assets/sprites/hero/');
+    if (!this.textures.exists('worker'))
+      this.load.multiatlas('worker', 'assets/sprites/worker_new/atlas.json', 'assets/sprites/worker_new/');
+    if (!this.textures.exists('wolf'))
+      this.load.multiatlas('wolf', 'assets/sprites/wolf/atlas.json', 'assets/sprites/wolf/');
+    if (!this.textures.exists('deer'))
+      this.load.multiatlas('deer', 'assets/sprites/deer/atlas.json', 'assets/sprites/deer/');
+
+    for (const k of ['prop_rock_cluster_01', 'prop_snow_bush_01', 'prop_cliff_edge_01', 'prop_lantern_post_01']) {
+      if (!this.textures.exists(k)) this.load.image(k, `assets/${k}.webp`);
+    }
+
+    const noAudio = new URLSearchParams(window.location.search).has('noaudio');
+    if (!noAudio) {
+      const SFX = [
+        'snd_axe_chop', 'snd_log_drop', 'snd_coin_pickup',
+        'snd_fire_loop', 'snd_wind_loop', 'snd_ice_shatter',
+        'snd_build_complete', 'snd_win_jingle',
+      ];
+      for (const k of SFX) {
+        if (!this.cache.audio.exists(k)) this.load.audio(k, `assets/audio/${k}.m4a`);
+      }
+    }
+
+    this.load.on('loaderror', (file: Phaser.Loader.File) => {
+      if (file.key === 'wolf') console.warn('[Frostborn] Wolf atlas not found');
+      if (file.key === 'deer') console.warn('[Frostborn] Deer atlas not found');
+    });
+  }
+
   // ── create ────────────────────────────────────────────────────────────────
 
   create(): void {
+    // Remove loading UI now that the game world is about to render
+    for (const obj of this._loadingUI) obj.destroy();
+    this._loadingUI = [];
+
     this.trees = []; this.survivors = []; this.logIcons = [];
     this.depthGroup = []; this.decorSprites = []; this.tentSprite = null; this.obstacles = [];
     this.nextWorkerTreeIndex = 1; // tree 0 is above fire and blocked; workers start at tree 1
@@ -464,7 +566,7 @@ export default class GameScene extends Phaser.Scene {
     this.fireSprite = this.add.image(this.fireX, this.fireY, 'building_cauldron_firepit_01')
       .setDisplaySize(115, 115).setOrigin(0.5, 0.85);
     this.depthGroup.push(this.fireSprite);
-    this.obstacles.push({ x: this.fireX, y: this.fireY, r: 48 });
+    this.obstacles.push({ x: this.fireX, y: this.fireY, r: 62 });
 
     this.add.particles(this.fireX, this.fireY - 42, 'smokepuff', {
       speed: { min: 12, max: 26 }, angle: { min: 258, max: 282 },
@@ -491,25 +593,25 @@ export default class GameScene extends Phaser.Scene {
     this.drawPadOutline();
     this.tweens.add({ targets: this.padGfx, alpha: { from: 0.28, to: 0.75 }, yoyo: true, repeat: -1, duration: 1100 });
 
-    // Sign — positioned between fire (y≈469) and pad (y≈548) to avoid both
+    // Sign — beside the pad (offset right so it doesn't cover the pad diamond)
     this.padSignGfx = this.add.graphics().setDepth(10);
-    const sx = this.padX, sy = this.padY - 42;
-    // Sign plank: 164px wide
-    this.padSignGfx.fillStyle(0x6B4226, 1).fillRoundedRect(sx - 82, sy - 44, 164, 44, 6);
-    this.padSignGfx.fillStyle(0x8B5E3C, 1).fillRoundedRect(sx - 80, sy - 42, 160, 40, 5);
-    this.padSignGfx.lineStyle(2, 0x4A2F1A, 1).strokeRoundedRect(sx - 82, sy - 44, 164, 44, 6);
-    this.padSignGfx.lineStyle(1, 0x7A5035, 0.4).lineBetween(sx - 72, sy - 34, sx + 72, sy - 34);
-    this.padSignGfx.lineStyle(1, 0x7A5035, 0.4).lineBetween(sx - 72, sy - 22, sx + 72, sy - 22);
-    // Short post pointing down to pad
-    this.padSignGfx.fillStyle(0x6B4226, 1).fillRect(sx - 3, sy, 6, 42);
-    this.padLabel = this.add.text(sx - 10, sy - 22,
-      `Build Tent  ${pad.costCoins}`, {
-        fontFamily: "'Fredoka One', cursive",
-        fontSize: '14px', color: '#ffe0b0', align: 'center',
+    const sx = this.padX + 76, sy = this.padY - 10;
+    const remaining0 = pad.costCoins;
+
+    this.padLabel = this.add.text(sx, sy - 22,
+      `${t('buildTentSign')}  ${remaining0}`, {
+        fontFamily: "GameFont, cursive",
+        fontSize: '15px', color: '#ffe0b0', align: 'center',
       }).setOrigin(0.5, 0.5).setDepth(11);
-    // Coin icon next to price (avoids emoji rendering issues)
-    this.add.image(sx + this.padLabel.width / 2 - 2, sy - 22, 'resource_coin_gold_01')
-      .setDisplaySize(14, 14).setDepth(11).setOrigin(0, 0.5);
+
+    if (this.textures.exists('resource_coin_gold_01')) {
+      this.add.image(sx + this.padLabel.width / 2 + 11, sy - 22, 'resource_coin_gold_01')
+        .setDisplaySize(14, 14).setDepth(11).setOrigin(0, 0.5);
+    }
+
+    this.signSW = Math.max(140, this.padLabel.width + 44);
+    this.signSX = sx; this.signSY = sy;
+    this.drawPadSign(sx, sy, this.signSW, 0);
 
     // ── Player ────────────────────────────────────────────────────────────
     const si = cfg.player.startIso as [number, number];
@@ -518,7 +620,7 @@ export default class GameScene extends Phaser.Scene {
     this.playerSprite = this.add.sprite(sp2.x, sp2.y, 'hero', 'hero_walk_d0_f0')
       .setDisplaySize(CHAR_SIZE, CHAR_SIZE).setOrigin(0.5, 1.0);
     this.depthGroup.push(this.playerSprite);
-    this.playerHpBarGfx = this.add.graphics().setDepth(1005);
+    this.playerHpBarGfx = this.add.graphics().setDepth(1500);
     this.playerBaseScaleX = this.playerSprite.scaleX;
     this.playerBaseScaleY = this.playerSprite.scaleY;
 
@@ -541,20 +643,37 @@ export default class GameScene extends Phaser.Scene {
 
     // ── Frozen survivors ──────────────────────────────────────────────────
     // Ice block dimensions proportional to CHAR_SIZE
-    const IW = 60; const IH = 76; const IXO = 30; const IYO = 76;
+    const IW = 56; const IH = 72; const IXO = 28; const IYO = 76;
 
     for (const svd of cfg.frozenSurvivors) {
       const svIso = svd.iso as [number, number];
       const svPos = isoToScreen(svIso[0], svIso[1], ox, oy);
 
-      // Ice block
+      // Ice block — translucent front face + isometric top face for 3D look
       const iceGfx = this.add.graphics().setDepth(svPos.y - 1);
-      iceGfx.fillStyle(0x99ddff, 0.42).lineStyle(2, 0xbbedff, 0.85);
-      iceGfx.fillRoundedRect(svPos.x - IXO, svPos.y - IYO, IW, IH, 8);
-      iceGfx.strokeRoundedRect(svPos.x - IXO, svPos.y - IYO, IW, IH, 8);
-      // Inner frost shimmer
+      // Front face
+      iceGfx.fillStyle(0x99ddff, 0.38).lineStyle(2, 0xbbedff, 0.80);
+      iceGfx.fillRoundedRect(svPos.x - IXO, svPos.y - IYO, IW, IH, 7);
+      iceGfx.strokeRoundedRect(svPos.x - IXO, svPos.y - IYO, IW, IH, 7);
+      // Isometric top face (lighter, parallelogram above the block)
+      const th = 14; // top-face height
+      iceGfx.fillStyle(0xddf4ff, 0.55);
+      iceGfx.fillPoints([
+        { x: svPos.x - IXO,        y: svPos.y - IYO } as any,
+        { x: svPos.x - IXO + IW,   y: svPos.y - IYO } as any,
+        { x: svPos.x - IXO + IW + 10, y: svPos.y - IYO - th } as any,
+        { x: svPos.x - IXO + 10,   y: svPos.y - IYO - th } as any,
+      ], true);
+      iceGfx.lineStyle(1.5, 0xddf4ff, 0.70);
+      iceGfx.strokePoints([
+        { x: svPos.x - IXO,        y: svPos.y - IYO } as any,
+        { x: svPos.x - IXO + IW,   y: svPos.y - IYO } as any,
+        { x: svPos.x - IXO + IW + 10, y: svPos.y - IYO - th } as any,
+        { x: svPos.x - IXO + 10,   y: svPos.y - IYO - th } as any,
+      ], true);
+      // Inner frost shimmer on front face
       iceGfx.lineStyle(1, 0xeef8ff, 0.3);
-      iceGfx.strokeRoundedRect(svPos.x - IXO + 4, svPos.y - IYO + 4, IW - 8, IH - 8, 5);
+      iceGfx.strokeRoundedRect(svPos.x - IXO + 4, svPos.y - IYO + 4, IW - 8, IH - 8, 4);
 
       // Frost particles drifting up from the ice block
       const frostEmitter = this.add.particles(svPos.x, svPos.y - IYO / 2, 'frostpuff', {
@@ -567,7 +686,7 @@ export default class GameScene extends Phaser.Scene {
         gravityY: -12,
       }).setDepth(svPos.y + 4);
 
-      const sp3 = this.add.sprite(svPos.x, svPos.y, 'worker', 'worker_walk_d4_f0')
+      const sp3 = this.add.sprite(svPos.x, svPos.y, 'worker', 'worker_walk_d0_f0')
         .setDisplaySize(CHAR_SIZE, CHAR_SIZE).setOrigin(0.5, 1.0).setTint(0x88ccff);
       this.depthGroup.push(sp3);
 
@@ -614,11 +733,13 @@ export default class GameScene extends Phaser.Scene {
         const rcPos = isoToScreen(rcIso[0], rcIso[1], ox, oy);
         const radiusPx = (ad.roamRadius ?? 3) * cfg.tileW * 0.75;
         const charType = (ad.type as string) ?? 'wolf';
-        const atlasKey = charType === 'alphawolf' ? 'wolf' : charType;
-        const isBoss = charType === 'alphawolf';
+        const WOLF_TYPES = new Set(['wolf','alphawolf','alphawolf2','betawolf','grandalpha']);
+        const atlasKey = WOLF_TYPES.has(charType) ? 'wolf' : charType;
+        const isBoss = charType !== 'wolf';
         const hasAtlas = this.textures.exists(atlasKey);
         const displayScale = spec.displayScale ?? 1;
-        const displaySize = Math.round(80 * displayScale);
+        const baseSize = atlasKey === 'deer' ? 136 : WOLF_TYPES.has(charType) ? 144 : 80;
+        const displaySize = Math.round(baseSize * displayScale);
         const sp = hasAtlas
           ? this.add.sprite(pos.x, pos.y, atlasKey, `${atlasKey}_walk_d0_f0`).setDisplaySize(displaySize, displaySize).setOrigin(0.5, 1.0)
           : this.add.sprite(pos.x, pos.y, 'enemy_grey_wolf_01').setDisplaySize(displaySize > 80 ? displaySize : 70, displaySize > 80 ? displaySize : 70).setOrigin(0.5, 1.0);
@@ -626,11 +747,7 @@ export default class GameScene extends Phaser.Scene {
         const baseTint = spec.furTint ?? 0xffffff;
         if (baseTint !== 0xffffff) sp.setTint(baseTint);
         let eyeGlow: Phaser.GameObjects.Image | undefined;
-        if (isBoss && hasAtlas) {
-          if (!this.textures.exists('wolfeyeglow')) this.createEyeGlowTexture();
-          eyeGlow = this.add.image(pos.x, pos.y - displaySize * 0.78, 'wolfeyeglow')
-            .setDisplaySize(40, 20).setBlendMode(Phaser.BlendModes.ADD).setDepth(pos.y + 2);
-        }
+        // Eye glow removed — per-frame head tracking not feasible without frame-level bone data
         const animal: AnimalEntity = {
           sprite: sp, atlasKey, baseTint, isBoss, eyeGlow, summonedMinions: false, displaySize,
           hp: spec.hp, maxHp: spec.hp,
@@ -687,12 +804,12 @@ export default class GameScene extends Phaser.Scene {
 
     // ── Ambient sounds ─────────────────────────────────────────────────────
     if (this.sound.get('snd_fire_loop') === null) {
-      this.fireSoundRef = this.sound.add('snd_fire_loop', { loop: true, volume: 0.30 });
-      this.fireSoundRef.play();
+      this.fireSoundRef = safeAdd(this, 'snd_fire_loop', { loop: true, volume: 0.30 }) ?? undefined;
+      this.fireSoundRef?.play();
     }
     if (this.sound.get('snd_wind_loop') === null) {
-      this.windSoundRef = this.sound.add('snd_wind_loop', { loop: true, volume: 0.18 });
-      this.windSoundRef.play();
+      this.windSoundRef = safeAdd(this, 'snd_wind_loop', { loop: true, volume: 0.18 }) ?? undefined;
+      this.windSoundRef?.play();
     }
 
     // ── Joystick input (visuals are in UIScene) ───────────────────────────
@@ -802,18 +919,49 @@ export default class GameScene extends Phaser.Scene {
     ], true);
   }
 
+  private drawPadSign(sx: number, sy: number, sw: number, progressPct: number): void {
+    const half = sw / 2;
+    this.padSignGfx.clear();
+    // Dark border plank
+    this.padSignGfx.fillStyle(0x6B4226, 1).fillRoundedRect(sx - half, sy - 48, sw, 46, 6);
+    // Light face
+    this.padSignGfx.fillStyle(0x8B5E3C, 1).fillRoundedRect(sx - half + 2, sy - 46, sw - 4, 42, 5);
+    // Progress fill (green, left-to-right)
+    if (progressPct > 0 && progressPct < 1) {
+      const fillW = (sw - 8) * progressPct;
+      this.padSignGfx.fillStyle(0x44aa44, 0.4).fillRoundedRect(sx - half + 4, sy - 44, fillW, 38, 4);
+    }
+    // Border
+    this.padSignGfx.lineStyle(2, 0x4A2F1A, 1).strokeRoundedRect(sx - half, sy - 48, sw, 46, 6);
+    // Grain lines
+    this.padSignGfx.lineStyle(1, 0x7A5035, 0.4).lineBetween(sx - half + 10, sy - 36, sx + half - 10, sy - 36);
+    this.padSignGfx.lineStyle(1, 0x7A5035, 0.4).lineBetween(sx - half + 10, sy - 24, sx + half - 10, sy - 24);
+    // Post
+    this.padSignGfx.fillStyle(0x6B4226, 1).fillRect(sx - 3, sy - 2, 6, 44);
+  }
+
+  private updatePadSign(): void {
+    const pad = cfg.buildPads[0];
+    const remaining = Math.max(0, pad.costCoins - Math.floor(this.coinsPaidForTent));
+    const pct = Math.min(1, this.coinsPaidForTent / pad.costCoins);
+    this.padLabel.setText(`${t('buildTentSign')}  ${remaining}`);
+    this.drawPadSign(this.signSX, this.signSY, this.signSW, pct);
+  }
+
   // Maps screen-space velocity to the direction index whose rendered facing
   // angle is nearest to the movement angle.
-  // Values measured from Blender cone probes: cone centroid vs origin marker,
-  // same camera as render_sprites.py (ELEV=32°, AZIM=45°, to_track_quat("-Z","Y")).
   // Screen convention: right=0°, down=90°.
-  private static readonly DIR_SCREEN_ANGLES = [90.0, 28.8, 1.3, 334.1, 270.0, 205.9, 178.7, 151.2];
-  private velToDir(velX: number, velY: number): number {
+  // Hero/worker: ELEV=32°, measured from Blender cone probes (commit 5fc0fa7).
+  private static readonly CHAR_DIR_ANGLES = [90.0, 28.8, 1.3, 334.1, 270.0, 205.9, 178.7, 151.2];
+  // Wolf/deer: ELEV=36°, measured after quadruped re-render.
+  private static readonly WOLF_DIR_ANGLES = [90.0, 28.8, 1.3, 334.1, 270.0, 205.9, 178.7, 151.2];
+
+  private velToDir(velX: number, velY: number, angles = GameScene.CHAR_DIR_ANGLES): number {
     if (velX * velX + velY * velY < 20 * 20) return -1;
     const angleDeg = (Math.atan2(velY, velX) * 180 / Math.PI + 360) % 360;
     let best = 0, bestDiff = Infinity;
     for (let i = 0; i < 8; i++) {
-      const diff = Math.abs(((angleDeg - GameScene.DIR_SCREEN_ANGLES[i] + 540) % 360) - 180);
+      const diff = Math.abs(((angleDeg - angles[i] + 540) % 360) - 180);
       if (diff < bestDiff) { bestDiff = diff; best = i; }
     }
     return best;
@@ -821,7 +969,7 @@ export default class GameScene extends Phaser.Scene {
 
   private wolfDir(dx: number, dy: number): number {
     if (dx * dx + dy * dy < 4) return -1;
-    return this.velToDir(dx, dy);
+    return this.velToDir(dx, dy, GameScene.WOLF_DIR_ANGLES);
   }
 
   // Shared hysteresis: hold a new direction for 100ms before committing.
@@ -910,7 +1058,9 @@ export default class GameScene extends Phaser.Scene {
     }
     } // end !this.playerDead
     const isMoving = velX !== 0 || velY !== 0;
-    if (isMoving) { this.lastVelX = velX; this.lastVelY = velY; }
+    // Save pre-projection velocity for facing — wall deflection must not change which way you face
+    const inputVX = velX; const inputVY = velY;
+    if (isMoving) { this.lastVelX = inputVX; this.lastVelY = inputVY; }
 
     // Project velocity away from walls before applying movement
     const projPV = this.projectVelocityFromWalls(velX, velY, this.playerLX, this.playerLY);
@@ -930,9 +1080,9 @@ export default class GameScene extends Phaser.Scene {
     this.playerBobY = isMoving ? Math.sin(this.playerWaddlePhase) * BOB_AMP : 0;
 
     // Apply player animation + position
-    // Only use joystick velocity for facing — separation/constraint forces are excluded.
-    const pvx = isMoving ? velX : this.lastVelX;
-    const pvy = isMoving ? velY : this.lastVelY;
+    // Use input velocity (pre-projection) so facing reflects pressed keys, not wall deflection.
+    const pvx = isMoving ? inputVX : this.lastVelX;
+    const pvy = isMoving ? inputVY : this.lastVelY;
     const rawDir = this.velToDir(pvx, pvy);
     const pds = this.stepDir(this.playerLastDir, this.pendingDir, this.pendingDirMs, rawDir, delta);
     this.playerLastDir = pds.lastDir; this.pendingDir = pds.pendingDir; this.pendingDirMs = pds.pendingMs;
@@ -1010,8 +1160,8 @@ export default class GameScene extends Phaser.Scene {
       this.fuel = Math.min(cfg.fire.fuelMax, this.fuel + cfg.fire.fuelPerLog * n);
       this.coins += cfg.fire.coinsPerLog * n;
       this.carriedLogs = 0;
-      this.sound.play('snd_log_drop', { volume: 0.65 });
-      this.time.delayedCall(250, () => this.sound.play('snd_coin_pickup', { volume: 0.55 }));
+      safePlay(this, 'snd_log_drop', { volume: 0.65 });
+      this.time.delayedCall(250, () => safePlay(this, 'snd_coin_pickup', { volume: 0.55 }));
       this.spawnCoinFly(n);
       this.tweens.add({
         targets: this.fireSprite,
@@ -1030,6 +1180,7 @@ export default class GameScene extends Phaser.Scene {
       if (inPadRange && this.coins > 0) {
         const pay = Math.min(this.coins, padCfg.payRateCoinsPerSec * dt);
         this.coins -= pay; this.coinsPaidForTent += pay;
+        this.updatePadSign();
         if (this.coinsPaidForTent >= padCfg.costCoins) this.buildTent();
       } else if (inPadRange && this.coins === 0) {
         onPadWithNoCoins = true;
@@ -1074,7 +1225,7 @@ export default class GameScene extends Phaser.Scene {
 
         if (distPl < cfg.survivorFollowRangePx) {
           sv.state = 'following';
-          this.sound.play('snd_ice_shatter', { volume: 0.7 });
+          safePlay(this, 'snd_ice_shatter', { volume: 0.7 });
           // Remove all frozen visuals with ice shatter
           sv.iceGfx?.destroy(); sv.iceGfx = undefined;
           sv.frostEmitter?.destroy(); sv.frostEmitter = undefined;
@@ -1085,7 +1236,7 @@ export default class GameScene extends Phaser.Scene {
             lifespan: 600, emitting: false,
           }).explode(18);
           const excl = this.add.text(sv.lx, sv.ly - 80, '!', {
-            fontFamily: "'Fredoka One', cursive", fontSize: '34px', color: '#ffff00', stroke: '#000000', strokeThickness: 5,
+            fontFamily: "GameFont, cursive", fontSize: '34px', color: '#ffff00', stroke: '#000000', strokeThickness: 5,
           }).setOrigin(0.5, 1).setDepth(sv.sprite.depth + 20);
           this.tweens.add({ targets: excl, y: sv.ly - 145, alpha: 0, duration: 1100, ease: 'Quad.Out', onComplete: () => excl.destroy() });
         }
@@ -1176,8 +1327,12 @@ export default class GameScene extends Phaser.Scene {
     this.shadowGfx.fillEllipse(this.playerLX, this.playerLY, 44, 16);
     this.shadowGfx.fillEllipse(this.fireX, this.fireY, 62, 24);
     for (const tree of this.trees) this.shadowGfx.fillEllipse(tree.sprite.x, tree.sprite.y, 54, 20);
-    for (const sv of this.survivors) this.shadowGfx.fillEllipse(sv.lx, sv.ly, 42, 15);
-    for (const ds of this.decorSprites) this.shadowGfx.fillEllipse(ds.x, ds.y, 44, 16);
+    for (const sv of this.survivors) {
+      if (sv.sprite.alpha > 0) this.shadowGfx.fillEllipse(sv.lx, sv.ly, 42, 15);
+    }
+    for (const ds of this.decorSprites) {
+      if (ds.alpha > 0) this.shadowGfx.fillEllipse(ds.x, ds.y, 44, 16);
+    }
     if (this.tentSprite) this.shadowGfx.fillEllipse(this.tentSprite.x, this.tentSprite.y, 70, 26);
 
     // ── Animals ────────────────────────────────────────────────────────────────
@@ -1202,7 +1357,7 @@ export default class GameScene extends Phaser.Scene {
         const hitTarget = a;
         this.time.delayedCall(220, () => {
           if (this.gameOver || hitTarget.state === 'dead') return;
-          this.sound.play('snd_axe_chop', { volume: 0.55 });
+          safePlay(this, 'snd_axe_chop', { volume: 0.55 });
           hitTarget.hp--; hitTarget.hitFlashMs = 180;
           // Impact burst at wolf
           this.add.particles(hitTarget.lx, hitTarget.ly - 20, 'woodchip', {
@@ -1223,7 +1378,7 @@ export default class GameScene extends Phaser.Scene {
           if (hitTarget.hp <= 0) {
             this.killAnimal(hitTarget);
           } else {
-            if (hitTarget.hp < hitTarget.maxHp * hitTarget.spec.fleeBelowHpPct) {
+            if (hitTarget.atlasKey === 'deer' && hitTarget.hp < hitTarget.maxHp * hitTarget.spec.fleeBelowHpPct) {
               hitTarget.state = 'flee'; hitTarget.fleeMs = hitTarget.spec.fleeTimeSec * 1000;
             }
             if (hitTarget.isBoss && !hitTarget.summonedMinions && hitTarget.hp <= hitTarget.maxHp * (hitTarget.spec.summonAtHpPct ?? 0.5)) {
@@ -1242,7 +1397,15 @@ export default class GameScene extends Phaser.Scene {
       if (a.state === 'dead') {
         if (a.deathMs > 0) {
           a.deathMs = Math.max(0, a.deathMs - delta);
-          a.sprite.setAlpha(a.deathMs / 600).setAngle(a.sprite.angle + delta * 0.12);
+          if (a.sprite.active) {
+            a.sprite.setAlpha(a.deathMs / 600).setAngle(a.sprite.angle + delta * 0.12);
+            if (a.deathMs <= 0) {
+              // Death animation complete — destroy sprite, remove from depth group
+              const di = this.depthGroup.indexOf(a.sprite);
+              if (di >= 0) this.depthGroup.splice(di, 1);
+              a.sprite.destroy();
+            }
+          }
         }
         a.respawnMs = Math.max(0, a.respawnMs - delta);
         if (a.respawnMs <= 0 && a.deathMs <= 0) this.respawnAnimal(a);
@@ -1283,17 +1446,18 @@ export default class GameScene extends Phaser.Scene {
       } else if (a.state === 'windup') {
         // ── Windup: pause, crouch (scale pulse), face player ─────────────────
         a.stateTimer = Math.max(0, a.stateTimer - delta);
-        // Scale pulse: 1.0 → 0.88 → 1.0 over windupMs (crouch effect)
+        // Scale pulse based on the wolf's own displaySize so alpha wolves stay large
         const windPct = 1 - a.stateTimer / a.spec.windupMs;
         const crouchScale = 1 - 0.12 * Math.sin(windPct * Math.PI);
-        const baseDispSize = 70;
-        const natW = a.sprite.width / a.sprite.scaleX || baseDispSize;
-        const bs = baseDispSize / natW;
+        const bs = a.displaySize / 192; // 192 = wolf atlas sourceSize.w
         a.sprite.setScale(bs * (2 - crouchScale), bs * crouchScale);
         if (a.hitFlashMs <= 0) a.sprite.setTint(0xff8844); // orange-red = about to attack
         // Capture fresh player position each frame of windup
         a.lungeTargetX = this.playerLX; a.lungeTargetY = this.playerLY;
-        if (a.stateTimer <= 0) { a.state = 'lunge'; a.stateTimer = 500; }
+        if (a.stateTimer <= 0) {
+          a.state = 'lunge'; a.stateTimer = 500;
+          a.sprite.setDisplaySize(a.displaySize, a.displaySize); // restore display size after crouch
+        }
 
       } else if (a.state === 'lunge') {
         // ── Lunge: fast dash toward captured player position ──────────────────
@@ -1323,11 +1487,11 @@ export default class GameScene extends Phaser.Scene {
         }
         if (a.hitFlashMs <= 0) a.sprite.setTint(0xffccaa);
         if (a.stateTimer <= 0) {
-          // Reenter circle, pick new orbit angle + direction + timer before next windup
           a.state = 'circle';
           a.circleAngle = Math.atan2(a.ly - this.playerLY, a.lx - this.playerLX);
           a.circleDir = Math.random() > 0.5 ? 1 : -1;
-          a.stateTimer = 1500 + Math.random() * 2000; // 1.5–3.5s before next lunge
+          // Wolves re-engage fast; deer (and summoned minions) wait longer
+          a.stateTimer = a.atlasKey === 'deer' ? 1500 + Math.random() * 2000 : 300 + Math.random() * 400;
         }
 
       } else {
@@ -1345,6 +1509,40 @@ export default class GameScene extends Phaser.Scene {
         }
       }
 
+      // Keep animal outside palisade (iso 3,3–13,12) with body-radius margin.
+      // Catch-all: push to nearest outer wall whenever the body overlaps the boundary.
+      // Handles normal approach, fast lunges, and wolves spawned near the wall.
+      {
+        const ox = cfg.originX; const oy = cfg.originY;
+        const HW = TILE_W / 2; const HH = TILE_H / 2;
+        const wallMargin = a.displaySize / 80 + 0.5; // body half-width in ISO units (~2.3 wolf, ~3.375 alpha)
+        const outerW = 3 - wallMargin, outerE = 13 + wallMargin;
+        const outerN = 3 - wallMargin, outerS = 12 + wallMargin;
+
+        const curr = screenToIso(a.lx, a.ly, ox, oy);
+        const ix0 = curr.ix, iy0 = curr.iy;
+
+        if (ix0 > outerW && ix0 < outerE && iy0 > outerN && iy0 < outerS) {
+          // Inside or within margin — push to nearest outer edge
+          const dW = ix0 - outerW, dE = outerE - ix0, dN = iy0 - outerN, dS = outerS - iy0;
+          const minD = Math.min(dW, dE, dN, dS);
+          let newIx = ix0, newIy = iy0;
+          if      (minD === dW) newIx = outerW;
+          else if (minD === dE) newIx = outerE;
+          else if (minD === dN) newIy = outerN;
+          else                  newIy = outerS;
+
+          a.lx = ox + (newIx - newIy) * HW;
+          a.ly = oy + (newIx + newIy) * HH;
+          if (a.state === 'lunge' || a.state === 'windup') {
+            a.state = 'backoff'; a.stateTimer = 300;
+          } else if (a.state === 'roam') {
+            this.pickRoamTarget(a); // blocked roam target — pick a new one outside wall
+          }
+          // circle/backoff stay in state: wolf paces along wall following the player
+        }
+      }
+
       // Animal direction + animation (runs every frame, after movement)
       {
         const hasAtlas = this.textures.exists(a.atlasKey);
@@ -1357,6 +1555,9 @@ export default class GameScene extends Phaser.Scene {
           if (a.state === 'lunge' || a.state === 'windup') wantAnim = `${a.atlasKey}_attack_d${a.dir}`;
           else if (a.state === 'flee')                      wantAnim = `${a.atlasKey}_run_d${a.dir}`;
           else                                               wantAnim = `${a.atlasKey}_walk_d${a.dir}`;
+
+          // Fall back to walk when the requested anim doesn't exist (missing frames)
+          if (!this.anims.exists(wantAnim)) wantAnim = `${a.atlasKey}_walk_d${a.dir}`;
 
           if (this.anims.exists(wantAnim) && a.sprite.anims.getName() !== wantAnim) {
             a.sprite.play(wantAnim, true);
@@ -1379,15 +1580,12 @@ export default class GameScene extends Phaser.Scene {
         if (a.hitFlashMs <= 0 && a.state !== 'flee' && a.state !== 'circle' && a.state !== 'windup' && a.state !== 'lunge' && a.state !== 'backoff') a.sprite.setTint(a.baseTint);
       }
 
-      // Eye glow (boss only) — pulse slightly and follow head
-      if (a.eyeGlow) {
-        const pulse = 0.85 + 0.15 * Math.sin(a.bobPhase * 2.5);
-        a.eyeGlow.setPosition(a.lx, a.ly - a.displaySize * 0.78)
-          .setAlpha(pulse).setDepth(a.ly + 2);
+      // Shadow — only when sprite is visible
+      if (a.sprite.alpha > 0) {
+        const shadowBase = a.atlasKey === 'deer' ? 136 : 144;
+        const shadowScale = a.displaySize / shadowBase;
+        this.shadowGfx.fillEllipse(a.lx, a.ly, 54 * shadowScale, 20 * shadowScale);
       }
-
-      // Shadow
-      this.shadowGfx.fillEllipse(a.lx, a.ly, 54 * (a.displaySize / 80), 20 * (a.displaySize / 80));
     }
     // ── Meat drops ─────────────────────────────────────────────────────────────
     for (const md of this.meatDrops) {
@@ -1416,7 +1614,7 @@ export default class GameScene extends Phaser.Scene {
       const fdx2 = this.playerLX - this.fireX; const fdy2 = this.playerLY - this.fireY;
       if (fdx2*fdx2 + fdy2*fdy2 < cfg.player.dropRangePx**2) {
         this.cookQueue += this.carriedMeat; this.carriedMeat = 0;
-        this.sound.play('snd_log_drop', { volume: 0.45 });
+        safePlay(this, 'snd_log_drop', { volume: 0.45 });
       }
     }
     if (cookCfg && this.cookQueue > 0) {
@@ -1424,9 +1622,9 @@ export default class GameScene extends Phaser.Scene {
       if (this.cookTimer <= 0) {
         this.cookQueue--; this.cookTimer = cookCfg.cookTimeMs;
         this.coins += cookCfg.meatToCoins;
-        this.time.delayedCall(120, () => this.sound.play('snd_coin_pickup', { volume: 0.45 }));
+        this.time.delayedCall(120, () => safePlay(this, 'snd_coin_pickup', { volume: 0.45 }));
         const p = this.add.text(this.fireX, this.fireY - 50, `+${cookCfg.meatToCoins}`, {
-          fontFamily:"'Fredoka One',cursive", fontSize:'24px', color:'#ff9944', stroke:'#000', strokeThickness:4,
+          fontFamily:"GameFont,cursive", fontSize:'24px', color:'#ff9944', stroke:'#000', strokeThickness:4,
         }).setOrigin(0.5,1).setDepth(1003);
         this.tweens.add({ targets: p, y: this.fireY - 120, alpha: 0, duration: 1200, ease:'Quad.Out', onComplete: ()=>p.destroy() });
       }
@@ -1441,11 +1639,12 @@ export default class GameScene extends Phaser.Scene {
       sp.setDepth(sp === this.fireSprite ? sp.y + 17 : sp.y);
     }
 
-    // Player HP bar (world-space, above head, only when not full)
+    // Player HP bar (world-space, above head + any carried items)
     this.playerHpBarGfx.clear();
     if (!this.playerDead && this.playerHp < this.playerHpMax) {
       const bw = 44; const bx = this.playerLX - bw / 2;
-      const by = this.playerLY - CHAR_SIZE - 10;
+      const carried = Math.max(this.carriedLogs, this.carriedMeat);
+      const by = this.playerLY + this.playerBobY - CHAR_SIZE - 10 - (carried > 0 ? carried * 14 + 20 : 0);
       this.playerHpBarGfx.fillStyle(0x222222, 0.8).fillRoundedRect(bx - 1, by - 1, bw + 2, 8, 3);
       const pct = this.playerHp / this.playerHpMax;
       const col = pct > 0.5 ? 0x44ff44 : pct > 0.25 ? 0xffaa00 : 0xff2222;
@@ -1467,20 +1666,26 @@ export default class GameScene extends Phaser.Scene {
     this.hintTimer += delta;
     let hintMsg = '';
     if (this.hintTimer < cfg.hintDurationSec * 1000) {
-      if (this.hintTimer < 8000) hintMsg = 'Walk near trees to collect logs!';
-      else if (this.carriedLogs > 0) hintMsg = 'Carry logs to the fire!';
-      else if (!this.tentBuilt && this.coins >= 10) hintMsg = 'Stand on the blue pad to build the tent!';
-      else if (nearFrozen && nearDist > cfg.survivorFollowRangePx) hintMsg = 'Walk up to a frozen survivor!';
+      if (this.hintTimer < 8000) hintMsg = t('walkToTrees');
+      else if (this.carriedLogs > 0) hintMsg = t('carryToFire');
+      else if (!this.tentBuilt && this.coins >= 10) hintMsg = t('standOnPad');
+      else if (nearFrozen && nearDist > cfg.survivorFollowRangePx) hintMsg = t('walkToSurvivor');
     }
     // Goal text from active stage or legacy tent progress
     this.advanceGoalStage();
     let goalStr: string;
     if (this.goalStages.length > 0 && this.currentStageIdx < this.goalStages.length) {
-      goalStr = this.goalStages[this.currentStageIdx].hintText;
+      const stage = this.goalStages[this.currentStageIdx];
+      goalStr = (getLang() === 'tr' && stage.hintTextTr) ? stage.hintTextTr : stage.hintText;
     } else if (this.goalStages.length > 0) {
-      goalStr = 'All goals complete!';
+      goalStr = t('allGoalsComplete');
     } else {
-      goalStr = this.tentBuilt ? 'Tent built \u2713' : `Tent: ${Math.floor(this.coinsPaidForTent)}/${padCfg.costCoins}`;
+      if (this.tentBuilt) {
+        goalStr = t('tentBuiltOk');
+      } else {
+        const remaining = Math.max(0, padCfg.costCoins - Math.floor(this.coinsPaidForTent));
+        goalStr = tFmt('tentProgress', { left: remaining });
+      }
     }
     if (this.stageBannerMs > 0) goalStr = this.stageBannerText;
     const bannerAlpha = (this.stageBannerMs > 0)
@@ -1566,7 +1771,7 @@ export default class GameScene extends Phaser.Scene {
     // Floating "+N" popup at fire position (world space)
     const coinAmt = count * cfg.fire.coinsPerLog;
     const popup = this.add.text(this.fireX, this.fireY - 60, `+${coinAmt}`, {
-      fontFamily: "'Fredoka One', cursive", fontSize: '28px', color: '#ffd700',
+      fontFamily: "GameFont, cursive", fontSize: '28px', color: '#ffd700',
       stroke: '#000', strokeThickness: 4,
     }).setOrigin(0.5, 1).setDepth(1003);
     this.tweens.add({ targets: popup, y: this.fireY - 130, alpha: 0, duration: 1300, ease: 'Quad.Out', onComplete: () => popup.destroy() });
@@ -1594,7 +1799,7 @@ export default class GameScene extends Phaser.Scene {
       duration: 380, ease: 'Back.Out',
     });
     this.cameras.main.shake(320, 0.007);
-    this.sound.play('snd_build_complete', { volume: 0.75 });
+    safePlay(this, 'snd_build_complete', { volume: 0.75 });
     this.advanceGoalStage();
     this.checkWin();
   }
@@ -1633,9 +1838,9 @@ export default class GameScene extends Phaser.Scene {
           // Tree shake + chop sounds
           const treeSprite = w.workerTarget!.sprite;
           this.tweens.add({ targets: treeSprite, angle: { from: -4, to: 4 }, yoyo: true, repeat: 3, duration: 80, ease: 'Sine.InOut', onComplete: () => { treeSprite.angle = 0; } });
-          this.sound.play('snd_axe_chop', { volume: 0.60 });
-          this.time.delayedCall(1500, () => { if (w.workerState === 'chopping') this.sound.play('snd_axe_chop', { volume: 0.60 }); });
-          this.time.delayedCall(3000, () => { if (w.workerState === 'chopping') this.sound.play('snd_axe_chop', { volume: 0.60 }); });
+          safePlay(this, 'snd_axe_chop', { volume: 0.60 });
+          this.time.delayedCall(1500, () => { if (w.workerState === 'chopping') safePlay(this, 'snd_axe_chop', { volume: 0.60 }); });
+          this.time.delayedCall(3000, () => { if (w.workerState === 'chopping') safePlay(this, 'snd_axe_chop', { volume: 0.60 }); });
           // Wood chips burst at each axe swing (~every 1.5s)
           this.spawnWoodChips(tx, ty - 24);
           this.time.delayedCall(1500, () => { if (w.workerState === 'chopping') this.spawnWoodChips(tx, ty - 24); });
@@ -1721,7 +1926,7 @@ export default class GameScene extends Phaser.Scene {
       : this.rescuedCount >= cfg.goal.survivorsToRescue && this.tentBuilt;
     if (done && !this.gameOver) {
       this.gameOver = true;
-      this.sound.play('snd_win_jingle', { volume: 0.70 });
+      safePlay(this, 'snd_win_jingle', { volume: 0.70 });
       this.tweens.add({ targets: this.cameras.main, zoom: 1.65, duration: 1100, ease: 'Quad.InOut' });
       this.time.delayedCall(1200, () => { this.scene.stop('UIScene'); this.scene.start('WinScene', { levelNum: this.currentLevelNum }); });
     }
@@ -1767,7 +1972,7 @@ export default class GameScene extends Phaser.Scene {
       lifespan:280, emitting:false,
     }).explode(5);
     this.cameras.main.shake(140, 0.0045);
-    this.sound.play('snd_ice_shatter', { volume: 0.38 });
+    safePlay(this, 'snd_ice_shatter', { volume: 0.38 });
     if (this.playerHp <= 0) this.killPlayer();
   }
 
@@ -1792,9 +1997,20 @@ export default class GameScene extends Phaser.Scene {
   }
 
   private respawnAnimal(a: AnimalEntity): void {
+    // Recreate sprite (old one was destroyed after death animation)
+    const hasAtlas = this.textures.exists(a.atlasKey);
+    const sp = hasAtlas
+      ? this.add.sprite(a.spawnLx, a.spawnLy, a.atlasKey, `${a.atlasKey}_walk_d0_f0`)
+          .setDisplaySize(a.displaySize, a.displaySize).setOrigin(0.5, 1.0)
+      : this.add.sprite(a.spawnLx, a.spawnLy, 'enemy_grey_wolf_01')
+          .setDisplaySize(a.displaySize > 80 ? a.displaySize : 70, a.displaySize > 80 ? a.displaySize : 70)
+          .setOrigin(0.5, 1.0);
+    if (a.baseTint !== 0xffffff) sp.setTint(a.baseTint);
+    this.depthGroup.push(sp);
+    a.sprite = sp;
+
     a.hp = a.maxHp; a.lx = a.spawnLx; a.ly = a.spawnLy;
     a.state = 'roam'; a.summonedMinions = false;
-    a.sprite.setAlpha(1).setAngle(0).setPosition(a.lx, a.ly).setTint(a.baseTint);
     if (a.eyeGlow) a.eyeGlow.setVisible(true).setPosition(a.lx, a.ly - a.displaySize * 0.78);
     this.pickRoamTarget(a);
   }
@@ -1824,14 +2040,14 @@ export default class GameScene extends Phaser.Scene {
       const sx = alpha.lx + Math.cos(angle) * 90;
       const sy = alpha.ly + Math.sin(angle) * 55;
       const sp = hasAtlas
-        ? this.add.sprite(sx, sy, 'wolf', 'wolf_walk_d0_f0').setDisplaySize(80, 80).setOrigin(0.5, 1.0)
+        ? this.add.sprite(sx, sy, 'wolf', 'wolf_walk_d0_f0').setDisplaySize(97, 97).setOrigin(0.5, 1.0)
         : this.add.sprite(sx, sy, 'enemy_grey_wolf_01').setDisplaySize(70, 70).setOrigin(0.5, 1.0);
       sp.setAlpha(0);
       this.tweens.add({ targets: sp, alpha: 1, duration: 400 });
       this.depthGroup.push(sp);
       const minion: AnimalEntity = {
         sprite: sp, atlasKey: 'wolf', baseTint: 0xffffff, isBoss: false,
-        eyeGlow: undefined, summonedMinions: false, displaySize: 80,
+        eyeGlow: undefined, summonedMinions: false, displaySize: 97,
         hp: spec.hp, maxHp: spec.hp, dir: 0,
         lx: sx, ly: sy, state: 'circle',
         bobPhase: Math.random() * Math.PI * 2,
@@ -1949,5 +2165,17 @@ export default class GameScene extends Phaser.Scene {
       }
     }
     return { x: rx, y: ry };
+  }
+
+  // Dev/test helper — directly applies wolfDir and plays the animation; returns anim key
+  private __testAnimalDir(animalIdx: number, velX: number, velY: number): string {
+    const a = this.animals[animalIdx];
+    if (!a) return '';
+    const rawDir = this.wolfDir(velX, velY);
+    if (rawDir >= 0) a.dir = rawDir;
+    if (!this.textures.exists(a.atlasKey)) return '';
+    const wantAnim = `${a.atlasKey}_walk_d${a.dir}`;
+    if (this.anims.exists(wantAnim)) a.sprite.play(wantAnim, true);
+    return a.sprite.anims.currentAnim?.key ?? '';
   }
 }

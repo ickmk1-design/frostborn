@@ -12,7 +12,7 @@
     "freezeRatePerSec": 4, "freezeMax": 100
   },
   "trees": [
-    { "iso": [5, 4] }, { "iso": [11, 4] }, { "iso": [5, 10] }, { "iso": [11, 10] }
+    { "iso": [5, 4] }, { "iso": [11, 4] }, { "iso": [5, 10] }, { "iso": [12, 9] }
   ],
   "treeLogCooldownMs": 4500,
   "buildPads": [
@@ -35,8 +35,8 @@
   "gate": [[8,12],[9,12]],
   "goal": { "survivorsToRescue": 3 },
   "stages": [
-    { "type": "huntAnimals", "target": 1, "hintText": "Defeat the Alpha Wolf — watch for the summon at half HP!", "completedText": "Alpha Wolf slain! Now rescue survivors." },
-    { "type": "rescueSurvivors", "target": 3, "hintText": "Rescue 3 frozen survivors", "completedText": "Survivors rescued!" }
+    { "type": "huntAnimals", "target": 1, "hintText": "Defeat the Alpha Wolf — watch for the summon at half HP!", "hintTextTr": "Alfa kurdu yen!", "completedText": "Alpha Wolf slain! Now rescue survivors." },
+    { "type": "rescueSurvivors", "target": 3, "hintText": "Rescue 3 frozen survivors", "hintTextTr": "3 donmuş kişiyi kurtar", "completedText": "Survivors rescued!" }
   ],
   "hintDurationSec": 30,
   "animals": [
@@ -60,7 +60,7 @@
       "meatDrop": 6, "meatPerHit": 0, "respawnDelaySec": 180,
       "fleeBelowHpPct": 0.0, "fleeTimeSec": 0,
       "windupMs": 500, "lungeSpeedPx": 310, "backoffDistPx": 180, "backoffSpeedPx": 190,
-      "displayScale": 1.6, "furTint": 8926003,
+      "displayScale": 1.6, "furTint": 16759620,
       "summonAtHpPct": 0.5, "summonCount": 2
     }
   },
@@ -97,8 +97,6 @@
     { "key": "prop_snow_pine_tree_01",   "iso": [4, 21] },
     { "key": "prop_snow_pine_tree_01",   "iso": [12,21] },
     { "key": "tile_snow_drift_mound_01", "iso": [7, 20] },
-    { "key": "tile_snow_drift_mound_01", "iso": [9, 23] },
-    { "key": "prop_warning_sign_red",    "iso": [8, 14] },
-    { "key": "prop_warning_sign_red",    "iso": [9, 14] }
+    { "key": "tile_snow_drift_mound_01", "iso": [9, 23] }
   ]
 }

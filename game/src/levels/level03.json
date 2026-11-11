@@ -12,7 +12,7 @@
     "freezeRatePerSec": 4, "freezeMax": 100
   },
   "trees": [
-    { "iso": [5, 4] }, { "iso": [11, 4] }, { "iso": [5, 10] }, { "iso": [11, 10] }
+    { "iso": [5, 4] }, { "iso": [11, 4] }, { "iso": [5, 10] }, { "iso": [12, 9] }
   ],
   "treeLogCooldownMs": 4500,
   "buildPads": [
@@ -36,9 +36,9 @@
   "gate": [[8,12],[9,12]],
   "goal": { "survivorsToRescue": 4 },
   "stages": [
-    { "type": "rescueSurvivors", "target": 1, "hintText": "Find the first frozen survivor!", "completedText": "One found! Now build the tent." },
-    { "type": "buildStructure",  "target": "tent", "hintText": "Build the tent  90\uD83E\uDE99", "completedText": "Tent built! Rescue the rest." },
-    { "type": "rescueSurvivors", "target": 4, "hintText": "Rescue 3 more survivors" }
+    { "type": "rescueSurvivors", "target": 1, "hintText": "Find the first frozen survivor!", "hintTextTr": "İlk donmuş kişiyi bul!", "completedText": "One found! Now build the tent." },
+    { "type": "buildStructure",  "target": "tent", "hintText": "Build the tent  90\uD83E\uDE99", "hintTextTr": "Çadır kur  90\uD83E\uDE99", "completedText": "Tent built! Rescue the rest." },
+    { "type": "rescueSurvivors", "target": 4, "hintText": "Rescue 3 more survivors", "hintTextTr": "3 kişi daha kurtar" }
   ],
   "hintDurationSec": 28,
   "animals": [
