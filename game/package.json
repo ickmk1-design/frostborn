@@ -16,6 +16,7 @@
     "@capacitor/splash-screen": "^8.0.2",
     "@capacitor/status-bar": "^8.0.4",
     "@revenuecat/purchases-capacitor": "13.8.0",
+    "openai": "^6.49.0",
     "phaser": "^4.2.1"
   },
   "devDependencies": {

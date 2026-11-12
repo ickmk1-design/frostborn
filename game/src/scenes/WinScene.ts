@@ -2,136 +2,146 @@ import Phaser from 'phaser';
 import { markComplete, levelNumToKey } from '../progress';
 import { showRewarded } from '../services/ads';
 import { addCoins } from '../services/economy';
+import { FF, drawPanel, makeButton } from '../ui/theme';
+import { t } from '../i18n';
 
 const CONFETTI_COLORS = [0xff4444, 0xff9922, 0xffee22, 0x44dd44, 0x44aaff, 0xcc44ff, 0xff88cc];
-
-const NEXT_LEVEL: Record<number, number> = { 1: 2, 2: 4 };
+const NEXT_LEVEL: Record<number, number> = { 1:2, 2:3, 3:4, 4:5, 5:6, 6:7, 7:8, 8:9, 9:10, 10:11, 11:12, 12:13, 13:14, 14:15 };
 
 export default class WinScene extends Phaser.Scene {
-  constructor() {
-    super({ key: 'WinScene' });
-  }
+  constructor() { super({ key: 'WinScene' }); }
 
   create(data?: { levelNum?: number; coinsEarned?: number }): void {
     const levelNum = data?.levelNum ?? 1;
-    markComplete(levelNum);
+    const coinsEarned = data?.coinsEarned ?? 50;
+    void markComplete(levelNum);
     const nextNum = NEXT_LEVEL[levelNum];
 
-    const W = 390; const H = 844; const CX = W / 2;
+    const W = this.scale.width;
+    const H = this.scale.height;
+    const CX = W / 2;
 
+    // Dim overlay
     this.add.rectangle(CX, H / 2, W, H, 0x000820, 0.88);
 
+    // Confetti
     if (!this.textures.exists('confetti')) {
       const g = this.make.graphics({ add: false } as any);
       g.fillStyle(0xffffff, 1).fillRect(0, 0, 4, 8);
       g.generateTexture('confetti', 4, 8);
       g.destroy();
     }
-
     this.time.delayedCall(80, () => {
       for (const col of CONFETTI_COLORS) {
         this.add.particles(CX, -10, 'confetti', {
-          speed: { min: 140, max: 420 },
-          angle: { min: 60, max: 120 },
-          gravityY: 380,
-          lifespan: 3200,
-          scale: { min: 0.6, max: 1.4 },
-          rotate: { min: 0, max: 360 },
-          tint: col,
-          quantity: 6,
-          frequency: -1,
+          speed: { min: 140, max: 420 }, angle: { min: 60, max: 120 },
+          gravityY: 380, lifespan: 3200, scale: { min: 0.6, max: 1.4 },
+          rotate: { min: 0, max: 360 }, tint: col, quantity: 6, frequency: -1,
           emitZone: { type: 'random', source: new Phaser.Geom.Rectangle(-CX, 0, W, 1) } as any,
         }).explode(6);
       }
     });
 
-    this.time.delayedCall(200, () => {
-      if (this.textures.exists('effect_sparkle_reward_burst')) {
-        this.add.particles(CX, 320, 'effect_sparkle_reward_burst', {
-          speed: { min: 60, max: 180 }, angle: { min: 0, max: 360 },
-          scale: { start: 0.6, end: 0 }, alpha: { start: 1, end: 0 },
-          lifespan: 900, quantity: 1, frequency: -1,
-        }).explode(18);
-      }
-    });
+    // Popup panel
+    const panelW = W * 0.88;
+    const panelH = H * 0.68;
+    const panelY = H * 0.5;
+    drawPanel(this, CX, panelY, panelW, panelH, { depth: 5 });
 
+    // Stars
     const starGfx = this.add.graphics().setDepth(10);
-    for (let i = 0; i < 3; i++) {
-      this.drawStar(starGfx, CX + (i - 1) * 72, 230, 28, 12);
-    }
-    starGfx.fillStyle(0xffd700, 1).lineStyle(2, 0xffaa00, 1);
-    // redraw with correct style
-    starGfx.clear();
+    const starY = panelY - panelH * 0.28;
+    const starSpacing = Math.min(panelW * 0.22, 72);
     for (let i = 0; i < 3; i++) {
       starGfx.fillStyle(0xffd700, 1); starGfx.lineStyle(2, 0xffaa00, 1);
-      this.drawStar(starGfx, CX + (i - 1) * 72, 230, 28, 12);
+      this.drawStar(starGfx, CX + (i - 1) * starSpacing, starY, 28, 12);
     }
     starGfx.setAlpha(0).setScale(0.3);
     this.tweens.add({ targets: starGfx, alpha: 1, scaleX: 1, scaleY: 1, duration: 480, ease: 'Back.Out', delay: 120 });
 
-    const title = this.add.text(CX, 320, 'YOU WIN!', {
-      fontSize: '54px', color: '#ffe566', fontStyle: 'bold',
-      stroke: '#aa6600', strokeThickness: 5,
+    // Title
+    const title = this.add.text(CX, panelY - panelH * 0.14, t('youWin'), {
+      fontFamily: FF, fontSize: `${Math.round(W * 0.08)}px`, fontStyle: 'bold',
+      color: '#ffe566', stroke: '#aa6600', strokeThickness: 5,
     }).setOrigin(0.5).setAlpha(0).setDepth(10);
-    this.tweens.add({ targets: title, alpha: 1, y: 310, duration: 500, ease: 'Quad.Out', delay: 200 });
+    this.tweens.add({ targets: title, alpha: 1, y: title.y - 6, duration: 500, ease: 'Quad.Out', delay: 200 });
 
-    const sub = this.add.text(CX, 380, `Level ${levelNum} complete!`, {
-      fontSize: '18px', color: '#aaddff', align: 'center',
+    // Level + coins
+    const sub = this.add.text(CX, panelY - panelH * 0.03, `Level ${levelNum} · +${coinsEarned} coins`, {
+      fontFamily: FF, fontSize: '18px', color: '#aaddff',
     }).setOrigin(0.5).setAlpha(0).setDepth(10);
-    this.tweens.add({ targets: sub, alpha: 1, duration: 400, delay: 420 });
+    this.tweens.add({ targets: sub, alpha: 1, duration: 400, delay: 400 });
 
-    // Double coins rewarded ad button
-    const adBtn = this.add.text(CX, 460, 'Watch Ad — 2× Coins', {
-      fontSize: '17px', color: '#ffee88', backgroundColor: '#1a1a00',
-      padding: { x: 18, y: 10 }, stroke: '#886600', strokeThickness: 1,
-    }).setOrigin(0.5).setAlpha(0).setDepth(10).setInteractive({ useHandCursor: true });
+    // Stacked buttons
+    const btnW = panelW * 0.8;
+    const btnH = Math.round(H * 0.07);
+    const btnGap = btnH + 12;
+    const btnStartY = panelY + panelH * 0.14;
 
-    this.tweens.add({ targets: adBtn, alpha: 1, duration: 350, delay: 540 });
-
-    adBtn.on('pointerdown', () => {
-      adBtn.disableInteractive().setText('Loading...');
+    // Watch Ad button
+    const { bg: adBg, label: adLabel, zone: adZone } = makeButton(this, CX, btnStartY, t('watchAdCoins'), {
+      w: btnW, h: btnH, fontSize: '18px', depth: 10,
+      bgColor: 0x1a1a00, borderColor: 0x886600,
+    });
+    adBg.setAlpha(0); adLabel.setAlpha(0);
+    this.tweens.add({ targets: [adBg, adLabel], alpha: 1, duration: 350, delay: 540 });
+    adZone.on('pointerup', () => {
+      adZone.disableInteractive(); adLabel.setText('Loading...');
       showRewarded(
-        () => { addCoins(data?.coinsEarned ?? 50); adBtn.setText('Claimed!').setStyle({ color: '#44ff88' }); },
-        () => { adBtn.setText('Watch Ad — 2× Coins').setInteractive({ useHandCursor: true }); },
+        () => { addCoins(coinsEarned); adLabel.setText('Claimed!').setStyle({ color: '#44ff88' }); },
+        () => {
+          adLabel.setText(t('adNotAvailable'));
+          this.time.delayedCall(2000, () => { if (!adLabel.scene) return; adLabel.setText(t('watchAdCoins')); });
+          adZone.setInteractive({ useHandCursor: true });
+        },
+        () => {
+          adLabel.setText(t('adsAppOnly'));
+          this.time.delayedCall(2000, () => { if (!adLabel.scene) return; adLabel.setText(t('watchAdCoins')); });
+          adZone.setInteractive({ useHandCursor: true });
+        },
       );
     });
 
-    const btnY = nextNum ? 490 : 500;
-
-    // Next Level button (only if there is a next level)
+    // Next Level button
     if (nextNum) {
-      const btn = this.add.text(CX, btnY, `Level ${nextNum}  ->`, {
-        fontSize: '24px', color: '#ffffff', backgroundColor: '#225522',
-        padding: { x: 28, y: 14 }, stroke: '#44ff44', strokeThickness: 2,
-      }).setOrigin(0.5).setAlpha(0).setDepth(10).setInteractive({ useHandCursor: true });
-
-      this.tweens.add({ targets: btn, alpha: 1, duration: 380, delay: 650 });
-      btn.on('pointerover', () => btn.setStyle({ color: '#ccffcc' }));
-      btn.on('pointerout', () => btn.setStyle({ color: '#ffffff' }));
-      btn.on('pointerdown', () => {
-        this.cameras.main.fadeOut(300, 0, 0, 0);
-        this.time.delayedCall(310, () => {
-          this.scene.start('GameScene', { levelKey: levelNumToKey(nextNum), levelNum: nextNum });
-        });
+      const { bg: nextBg, label: nextLabel, zone: nextZone } = makeButton(this, CX, btnStartY + btnGap, t('nextLevel'), {
+        w: btnW, h: btnH, fontSize: '22px', depth: 10,
+        bgColor: 0x225522, borderColor: 0x44ff44,
       });
+      nextBg.setAlpha(0); nextLabel.setAlpha(0);
+      this.tweens.add({ targets: [nextBg, nextLabel], alpha: 1, duration: 380, delay: 650 });
       this.time.delayedCall(1050, () => {
-        this.tweens.add({ targets: btn, scaleX: 1.04, scaleY: 1.04, duration: 700, yoyo: true, repeat: -1, ease: 'Sine.InOut' });
+        this.tweens.add({ targets: [nextBg, nextLabel], scaleX: 1.03, scaleY: 1.03, duration: 700, yoyo: true, repeat: -1, ease: 'Sine.InOut' });
+      });
+      nextZone.on('pointerup', () => {
+        this.cameras.main.fadeOut(300, 0, 0, 0);
+        this.time.delayedCall(310, () => this.scene.start('GameScene', { levelKey: levelNumToKey(nextNum), levelNum: nextNum }));
+      });
+
+      // Menu
+      const { bg: menuBg, label: menuLabel, zone: menuZone } = makeButton(this, CX, btnStartY + btnGap * 2, t('menu'), {
+        w: btnW * 0.65, h: btnH * 0.8, fontSize: '18px', depth: 10,
+        bgColor: 0x112244, borderColor: 0x2255aa,
+      });
+      menuBg.setAlpha(0); menuLabel.setAlpha(0);
+      this.tweens.add({ targets: [menuBg, menuLabel], alpha: 1, duration: 350, delay: 800 });
+      menuZone.on('pointerup', () => {
+        this.cameras.main.fadeOut(220, 0, 0, 0);
+        this.time.delayedCall(230, () => this.scene.start('LevelSelectScene'));
+      });
+    } else {
+      // Last level — only menu
+      const { bg: menuBg, label: menuLabel, zone: menuZone } = makeButton(this, CX, btnStartY + btnGap, t('menu'), {
+        w: btnW, h: btnH, fontSize: '22px', depth: 10,
+        bgColor: 0x112244, borderColor: 0x2255aa,
+      });
+      menuBg.setAlpha(0); menuLabel.setAlpha(0);
+      this.tweens.add({ targets: [menuBg, menuLabel], alpha: 1, duration: 350, delay: 650 });
+      menuZone.on('pointerup', () => {
+        this.cameras.main.fadeOut(220, 0, 0, 0);
+        this.time.delayedCall(230, () => this.scene.start('LevelSelectScene'));
       });
     }
-
-    // Level Select button
-    const mapBtn = this.add.text(CX, nextNum ? btnY + 72 : btnY, 'Level Select', {
-      fontSize: '18px', color: '#aaccff', backgroundColor: '#112244',
-      padding: { x: 22, y: 10 }, stroke: '#2255aa', strokeThickness: 1,
-    }).setOrigin(0.5).setAlpha(0).setDepth(10).setInteractive({ useHandCursor: true });
-
-    this.tweens.add({ targets: mapBtn, alpha: 1, duration: 350, delay: 800 });
-    mapBtn.on('pointerover', () => mapBtn.setStyle({ color: '#ddeeff' }));
-    mapBtn.on('pointerout', () => mapBtn.setStyle({ color: '#aaccff' }));
-    mapBtn.on('pointerdown', () => {
-      this.cameras.main.fadeOut(220, 0, 0, 0);
-      this.time.delayedCall(230, () => this.scene.start('LevelSelectScene'));
-    });
   }
 
   private drawStar(g: Phaser.GameObjects.Graphics, cx: number, cy: number, outerR: number, innerR: number): void {

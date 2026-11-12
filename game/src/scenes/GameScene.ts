@@ -17,6 +17,7 @@ import level15 from '../levels/level15.json';
 import { isoToScreen, screenToIso, TILE_W, TILE_H } from '../isoUtils';
 import { safePlay, safeAdd } from '../utils/safeMedia';
 import { t, tFmt, getLang } from '../i18n';
+import { PLAYER_SPEED_MULT, WORKER_SPEED_MULT, BASE_WALK_SPEED, PLAYER_ACCEL_MS, PLAYER_DECEL_MS } from '../config/tuning';
 
 const LEVEL_CONFIGS: Record<string, any> = {
   level01, level02, level03, level04, level05,
@@ -50,6 +51,10 @@ interface Survivor {
   pendingDirMs: number;
   activeAnim: string;
   treeIndex: number;
+  workerSlot: number;
+  stuckMs: number;
+  stuckCheckX: number;
+  stuckCheckY: number;
 }
 
 interface AnimalEntity {
@@ -111,6 +116,8 @@ export default class GameScene extends Phaser.Scene {
   private playerLastDir = 0;
   private pendingDir = -1;
   private pendingDirMs = 0;
+  private playerVelX = 0;
+  private playerVelY = 0;
 
   private _loadingUI: Phaser.GameObjects.GameObject[] = [];
   private trees: TreeNode[] = [];
@@ -118,6 +125,8 @@ export default class GameScene extends Phaser.Scene {
   private fireX = 0; private fireY = 0;
   private survivors: Survivor[] = [];
   private nextWorkerTreeIndex = 0;
+  private nextWorkerSlot = 0;
+  private numWorkerSlots = 4;
 
   private padGfx!: Phaser.GameObjects.Graphics;
   private padLabel!: Phaser.GameObjects.Text;
@@ -131,6 +140,7 @@ export default class GameScene extends Phaser.Scene {
   private freezeMeter = 0; private rescuedCount = 0;
   private tentBuilt = false; private gameOver = false;
   private coinsPaidForTent = 0; private carriedLogs = 0;
+  private sceneTimeMs = 0;
 
   private logIcons: Phaser.GameObjects.Image[] = [];
   private dropZoneGfx!: Phaser.GameObjects.Graphics;
@@ -295,6 +305,8 @@ export default class GameScene extends Phaser.Scene {
     this.trees = []; this.survivors = []; this.logIcons = [];
     this.depthGroup = []; this.decorSprites = []; this.tentSprite = null; this.obstacles = [];
     this.nextWorkerTreeIndex = 1; // tree 0 is above fire and blocked; workers start at tree 1
+    this.nextWorkerSlot = 0;
+    this.numWorkerSlots = Math.max(4, cfg.frozenSurvivors?.length ?? 4);
 
     const ox = cfg.originX; const oy = cfg.originY;
 
@@ -701,6 +713,7 @@ export default class GameScene extends Phaser.Scene {
         lastDir: 4, pendingDir: -1, pendingDirMs: 0,
         activeAnim: 'walk',
         treeIndex: 0,
+        workerSlot: 0, stuckMs: 0, stuckCheckX: svPos.x, stuckCheckY: svPos.y,
       });
     }
 
@@ -839,12 +852,15 @@ export default class GameScene extends Phaser.Scene {
     });
 
     // ── State reset ────────────────────────────────────────────────────────
-    this.coins = 0; this.fuel = cfg.fire.fuelMax;
+    this.coins = 0;
+    this.fuel = (cfg.fire as any).initialFuel ?? cfg.fire.fuelMax;
+    this.sceneTimeMs = 0;
     this.freezeMeter = 0; this.rescuedCount = 0;
     this.tentBuilt = false; this.gameOver = false;
     this.coinsPaidForTent = 0; this.carriedLogs = 0;
     this.hintTimer = 0;
     this.lastVelX = 0; this.lastVelY = 0;
+    this.playerVelX = 0; this.playerVelY = 0;
     this.playerWaddlePhase = 0; this.playerBobY = 0;
     this.playerLastDir = 0;
     this.carriedMeat = 0; this.cookQueue = 0; this.cookTimer = 0;
@@ -902,6 +918,11 @@ export default class GameScene extends Phaser.Scene {
         }
       }
     }
+
+    // Signal UIScene to show level start banner
+    this.time.delayedCall(300, () => {
+      this.events.emit('level-start', { levelNum: this.currentLevelNum, levelName: cfg.name ?? '' });
+    });
   }
 
   private drawPadOutline(): void {
@@ -1005,6 +1026,7 @@ export default class GameScene extends Phaser.Scene {
   update(time: number, delta: number): void {
     if (this.gameOver) return;
     const dt = delta / 1000;
+    this.sceneTimeMs += delta;
 
     // Player respawn countdown while dead
     if (this.playerDead) {
@@ -1018,49 +1040,63 @@ export default class GameScene extends Phaser.Scene {
       }
     }
 
-    // Joystick velocity
-    let velX = 0; let velY = 0;
-
     // Player hit flash
     if (this.playerFlashMs > 0) {
       this.playerFlashMs = Math.max(0, this.playerFlashMs - delta);
       this.playerSprite.setTint(this.playerFlashMs > 0 ? 0xff2222 : 0xffffff);
       if (this.playerFlashMs <= 0) this.playerSprite.clearTint();
     }
-    // Knockback velocity
+    // Knockback decay
     if (this.playerKnockVX !== 0 || this.playerKnockVY !== 0) {
       const decay = Math.min(1, delta / 100);
       this.playerKnockVX *= (1 - decay); this.playerKnockVY *= (1 - decay);
       if (Math.abs(this.playerKnockVX) < 3) this.playerKnockVX = 0;
       if (Math.abs(this.playerKnockVY) < 3) this.playerKnockVY = 0;
-      velX += this.playerKnockVX; velY += this.playerKnockVY;
     }
 
+    // Compute target input velocity (joystick / keyboard)
+    let targetVelX = 0; let targetVelY = 0;
     if (!this.playerDead) {
-    if (this.joyActive) {
-      const dx = this.joyCX - this.joyOX; const dy = this.joyCY - this.joyOY;
-      const len = Math.sqrt(dx * dx + dy * dy);
-      if (len > 12) { const inv = cfg.player.speedPx / len; velX = dx * inv; velY = dy * inv; }
-    }
-    // Debug keyboard override (arrow keys / WASD)
-    {
-      const kL = this.cursors.left.isDown  || this.wasdKeys.left.isDown;
-      const kR = this.cursors.right.isDown || this.wasdKeys.right.isDown;
-      const kU = this.cursors.up.isDown    || this.wasdKeys.up.isDown;
-      const kD = this.cursors.down.isDown  || this.wasdKeys.down.isDown;
-      const kx = (kR ? 1 : 0) - (kL ? 1 : 0);
-      const ky = (kD ? 1 : 0) - (kU ? 1 : 0);
-      if (kx !== 0 || ky !== 0) {
-        const klen = Math.sqrt(kx * kx + ky * ky);
-        velX = (kx / klen) * cfg.player.speedPx;
-        velY = (ky / klen) * cfg.player.speedPx;
+      const baseSpeed = cfg.player.speedPx * PLAYER_SPEED_MULT;
+      if (this.joyActive) {
+        const dx = this.joyCX - this.joyOX; const dy = this.joyCY - this.joyOY;
+        const len = Math.sqrt(dx * dx + dy * dy);
+        if (len > 12) { const inv = baseSpeed / len; targetVelX = dx * inv; targetVelY = dy * inv; }
+      }
+      // Debug keyboard override (arrow keys / WASD)
+      {
+        const kL = this.cursors.left.isDown  || this.wasdKeys.left.isDown;
+        const kR = this.cursors.right.isDown || this.wasdKeys.right.isDown;
+        const kU = this.cursors.up.isDown    || this.wasdKeys.up.isDown;
+        const kD = this.cursors.down.isDown  || this.wasdKeys.down.isDown;
+        const kx = (kR ? 1 : 0) - (kL ? 1 : 0);
+        const ky = (kD ? 1 : 0) - (kU ? 1 : 0);
+        if (kx !== 0 || ky !== 0) {
+          const klen = Math.sqrt(kx * kx + ky * ky);
+          targetVelX = (kx / klen) * baseSpeed;
+          targetVelY = (ky / klen) * baseSpeed;
+        }
       }
     }
-    } // end !this.playerDead
+
+    // Smooth velocity toward target: 80ms ramp-up, 40ms brake
+    const hasInput = targetVelX !== 0 || targetVelY !== 0;
+    const tConst = hasInput ? PLAYER_ACCEL_MS : PLAYER_DECEL_MS;
+    const lFactor = 1 - Math.exp(-delta / tConst);
+    this.playerVelX += (targetVelX - this.playerVelX) * lFactor;
+    this.playerVelY += (targetVelY - this.playerVelY) * lFactor;
+    if (!hasInput && Math.abs(this.playerVelX) < 4) this.playerVelX = 0;
+    if (!hasInput && Math.abs(this.playerVelY) < 4) this.playerVelY = 0;
+
+    // Final velocity: smoothed input + knockback (knockback suppressed when player has input)
+    let velX = this.playerVelX + (hasInput ? 0 : this.playerKnockVX);
+    let velY = this.playerVelY + (hasInput ? 0 : this.playerKnockVY);
+
     const isMoving = velX !== 0 || velY !== 0;
-    // Save pre-projection velocity for facing — wall deflection must not change which way you face
-    const inputVX = velX; const inputVY = velY;
-    if (isMoving) { this.lastVelX = inputVX; this.lastVelY = inputVY; }
+    // inputVX/Y: smoothed direction only (excludes knockback, so facing never flips on hit)
+    const inputVX = this.playerVelX; const inputVY = this.playerVelY;
+    if (hasInput) { this.lastVelX = targetVelX; this.lastVelY = targetVelY; }
+    else if (this.playerVelX !== 0 || this.playerVelY !== 0) { this.lastVelX = this.playerVelX; this.lastVelY = this.playerVelY; }
 
     // Project velocity away from walls before applying movement
     const projPV = this.projectVelocityFromWalls(velX, velY, this.playerLX, this.playerLY);
@@ -1088,8 +1124,11 @@ export default class GameScene extends Phaser.Scene {
     this.playerLastDir = pds.lastDir; this.pendingDir = pds.pendingDir; this.pendingDirMs = pds.pendingMs;
     if (isMoving) {
       this.playCharAnim(this.playerSprite, 'hero', 'walk', this.playerLastDir);
+      const spd = Math.sqrt(this.playerVelX * this.playerVelX + this.playerVelY * this.playerVelY);
+      if (spd > 0) this.playerSprite.anims.timeScale = spd / BASE_WALK_SPEED;
     } else {
       this.showStaticWalk(this.playerSprite, 'hero', this.playerLastDir);
+      this.playerSprite.anims.timeScale = 1;
     }
     this.playerSprite.x = this.playerLX;
     this.playerSprite.y = this.playerLY + this.playerBobY;
@@ -1187,8 +1226,23 @@ export default class GameScene extends Phaser.Scene {
       }
     }
 
-    // Fuel & freeze
-    this.fuel = Math.max(0, this.fuel - cfg.fire.fuelDrainPerSec * dt);
+    // Fuel & freeze — with optional warmup period where drain is scaled down.
+    // For the first `warmupSec` seconds, drain is scaled by `warmupMul`; then over the next
+    // `warmupSec` seconds it ramps linearly back to 1.0. This keeps the opening survivable
+    // (per balance target: idle fire ≥ 90s) while preserving mid/late-level challenge.
+    const warmupSec = (cfg.fire as any).fuelDrainWarmupSec ?? 0;
+    const warmupMul = (cfg.fire as any).fuelDrainWarmupMul ?? 1;
+    let drainMul = 1;
+    if (warmupSec > 0 && warmupMul < 1) {
+      const tSec = this.sceneTimeMs / 1000;
+      if (tSec < warmupSec) {
+        drainMul = warmupMul;
+      } else if (tSec < warmupSec * 2) {
+        const prog = (tSec - warmupSec) / warmupSec; // 0 → 1
+        drainMul = warmupMul + (1 - warmupMul) * prog;
+      }
+    }
+    this.fuel = Math.max(0, this.fuel - cfg.fire.fuelDrainPerSec * drainMul * dt);
     if (this.fuel === 0) {
       this.freezeMeter += cfg.fire.freezeRatePerSec * dt;
       if (this.freezeMeter >= cfg.fire.freezeMax) { this.loseGame(); return; }
@@ -1264,7 +1318,7 @@ export default class GameScene extends Phaser.Scene {
       const dx = tlLX - sv.lx; const dy = tlLY - sv.ly;
       const d = Math.sqrt(dx * dx + dy * dy);
       if (d > TRAIL_SPACING) {
-        const speed = cfg.workerWalkSpeed;
+        const speed = cfg.workerWalkSpeed * WORKER_SPEED_MULT;
         const move = Math.min(d - TRAIL_SPACING, speed * dt);
         sv.lx += (dx / d) * move;
         sv.ly += (dy / d) * move;
@@ -1322,17 +1376,24 @@ export default class GameScene extends Phaser.Scene {
     }
 
     // Drop shadows (single graphics pass, depth between ground and sprites)
+    // Only draw shadows for dynamic entities (player, fire, trees, survivors, tent).
+    // Decor sprites are static and numerous — skipping them removes O(N) per-frame fillEllipse calls
+    // that caused FPS drops on L9+ where decorSprites count climbs to 30+.
     this.shadowGfx.clear();
     this.shadowGfx.fillStyle(0x000000, 0.20);
+    // Camera bounds for off-screen culling (with margin to avoid pop-in)
+    const camLeft   = cam.scrollX - 80;
+    const camRight  = cam.scrollX + cam.width / cam.zoom + 80;
+    const camTop    = cam.scrollY - 80;
+    const camBottom = cam.scrollY + cam.height / cam.zoom + 80;
+    const inView = (x: number, y: number) => x >= camLeft && x <= camRight && y >= camTop && y <= camBottom;
     this.shadowGfx.fillEllipse(this.playerLX, this.playerLY, 44, 16);
     this.shadowGfx.fillEllipse(this.fireX, this.fireY, 62, 24);
     for (const tree of this.trees) this.shadowGfx.fillEllipse(tree.sprite.x, tree.sprite.y, 54, 20);
     for (const sv of this.survivors) {
-      if (sv.sprite.alpha > 0) this.shadowGfx.fillEllipse(sv.lx, sv.ly, 42, 15);
+      if (sv.sprite.alpha > 0 && inView(sv.lx, sv.ly)) this.shadowGfx.fillEllipse(sv.lx, sv.ly, 42, 15);
     }
-    for (const ds of this.decorSprites) {
-      if (ds.alpha > 0) this.shadowGfx.fillEllipse(ds.x, ds.y, 44, 16);
-    }
+    // Decor sprites do NOT get per-frame shadows — saves 30+ fillEllipse calls on later levels
     if (this.tentSprite) this.shadowGfx.fillEllipse(this.tentSprite.x, this.tentSprite.y, 70, 26);
 
     // ── Animals ────────────────────────────────────────────────────────────────
@@ -1580,8 +1641,8 @@ export default class GameScene extends Phaser.Scene {
         if (a.hitFlashMs <= 0 && a.state !== 'flee' && a.state !== 'circle' && a.state !== 'windup' && a.state !== 'lunge' && a.state !== 'backoff') a.sprite.setTint(a.baseTint);
       }
 
-      // Shadow — only when sprite is visible
-      if (a.sprite.alpha > 0) {
+      // Shadow — only when sprite is visible and on-screen
+      if (a.sprite.alpha > 0 && inView(a.lx, a.ly)) {
         const shadowBase = a.atlasKey === 'deer' ? 136 : 144;
         const shadowScale = a.displaySize / shadowBase;
         this.shadowGfx.fillEllipse(a.lx, a.ly, 54 * shadowScale, 20 * shadowScale);
@@ -1634,9 +1695,13 @@ export default class GameScene extends Phaser.Scene {
       this.stageBannerMs = Math.max(0, this.stageBannerMs - delta);
     }
 
-    // Depth sort — cauldron has origin 0.85 so add 17px to sort by its stone-ring base
+    // Depth sort — only update depth for sprites near the camera; off-screen sprites retain
+    // their last depth value (which is correct since they haven't moved).
+    // Saves O(N) setDepth calls for the 50-150 procedural world fill sprites on L9+.
     for (const sp of this.depthGroup) {
-      sp.setDepth(sp === this.fireSprite ? sp.y + 17 : sp.y);
+      if (inView(sp.x, sp.y)) {
+        sp.setDepth(sp === this.fireSprite ? sp.y + 17 : sp.y);
+      }
     }
 
     // Player HP bar (world-space, above head + any carried items)
@@ -1712,6 +1777,7 @@ export default class GameScene extends Phaser.Scene {
       joyCX:        this.joyCX,
       joyCY:        this.joyCY,
       showCoinShop: onPadWithNoCoins,
+      levelNum:   this.currentLevelNum,
     });
   }
 
@@ -1726,8 +1792,10 @@ export default class GameScene extends Phaser.Scene {
       this.playCharAnim(sv.sprite, 'worker', 'chop', sv.lastDir);
     } else if (isMoving) {
       this.playCharAnim(sv.sprite, 'worker', sv.activeAnim, sv.lastDir);
+      sv.sprite.anims.timeScale = (cfg.workerWalkSpeed * WORKER_SPEED_MULT) / BASE_WALK_SPEED;
     } else {
       this.showStaticWalk(sv.sprite, 'worker', sv.lastDir);
+      sv.sprite.anims.timeScale = 1;
     }
 
     sv.sprite.x = sv.lx;
@@ -1810,6 +1878,9 @@ export default class GameScene extends Phaser.Scene {
     s.thawBar?.destroy(); s.thawBar = undefined;
     s.treeIndex = this.nextWorkerTreeIndex;
     this.nextWorkerTreeIndex = (this.nextWorkerTreeIndex + 1) % Math.max(1, this.trees.length);
+    s.workerSlot = this.nextWorkerSlot;
+    this.nextWorkerSlot = (this.nextWorkerSlot + 1) % this.numWorkerSlots;
+    s.stuckMs = 0; s.stuckCheckX = s.lx; s.stuckCheckY = s.ly;
     this.rescuedCount++;
     this.advanceGoalStage();
     this.checkWin();
@@ -1821,8 +1892,20 @@ export default class GameScene extends Phaser.Scene {
 
     switch (w.workerState) {
       case 'idle': {
-        const assigned = this.trees[Math.min(w.treeIndex, this.trees.length - 1)];
-        if (assigned && !assigned.onCooldown) { w.workerTarget = assigned; w.workerState = 'toTree'; w.activeAnim = 'walk'; }
+        // Cycle through ALL trees to find one not on cooldown.
+        // Fix: previously used a fixed treeIndex which could point to an always-on-cooldown tree
+        // (e.g. Worker 1 always assigned treeIndex=1 but level may have only 1 tree, or the tree
+        // is permanently on cooldown for that worker while another worker handles it).
+        let found: TreeNode | undefined;
+        for (let ti = 0; ti < this.trees.length; ti++) {
+          const candidate = this.trees[(w.treeIndex + ti) % this.trees.length];
+          if (candidate && !candidate.onCooldown) { found = candidate; break; }
+        }
+        if (found) {
+          w.workerTarget = found; w.workerState = 'toTree'; w.activeAnim = 'walk';
+          w.stuckMs = 0; w.stuckCheckX = w.lx; w.stuckCheckY = w.ly;
+        }
+        // If all trees on cooldown, stay idle — will retry next frame (cooldown is short ~5s)
         break;
       }
       case 'toTree': {
@@ -1830,7 +1913,7 @@ export default class GameScene extends Phaser.Scene {
         const tx = w.workerTarget.sprite.x; const ty = w.workerTarget.sprite.y;
         const dx = tx - w.lx; const dy = ty - w.ly; const d = Math.sqrt(dx*dx + dy*dy);
         if (d < 30) {
-          w.workerState = 'chopping';
+          w.workerState = 'chopping'; w.stuckMs = 0;
           w.activeAnim = 'chop';
           // Face the tree
           const toTreeDir = this.velToDir(tx - w.lx, ty - w.ly);
@@ -1848,32 +1931,56 @@ export default class GameScene extends Phaser.Scene {
           this.time.delayedCall(cfg.workerChopIntervalMs, () => {
             if (w.workerState === 'chopping') {
               w.workerCarrying = 1; w.workerState = 'toFire'; w.activeAnim = 'carry_walk';
+              w.stuckMs = 0; w.stuckCheckX = w.lx; w.stuckCheckY = w.ly;
               this.spawnFlyingLog(tx, ty - 20, this.fireX, this.fireY);
             }
           });
         } else {
-          const wvTree = this.projectVelocityFromWalls((dx/d)*cfg.workerWalkSpeed, (dy/d)*cfg.workerWalkSpeed, w.lx, w.ly);
+          const wvTree = this.projectVelocityFromWalls((dx/d)*cfg.workerWalkSpeed*WORKER_SPEED_MULT, (dy/d)*cfg.workerWalkSpeed*WORKER_SPEED_MULT, w.lx, w.ly);
           w.lx += wvTree.vx*dt; w.ly += wvTree.vy*dt;
           const wSep = this.applySeparation(w.lx, w.ly, w);
           const wo = this.constrainToObstacles(wSep.x, wSep.y);
           const wc = this.wallConstrain(prevLxW, prevLyW, wo.x, wo.y);
           w.lx = wc.x; w.ly = wc.y;
+          // Stuck detector: re-path after 3s without progress
+          w.stuckMs += delta;
+          if (w.stuckMs >= 3000) {
+            const movedSq = (w.lx - w.stuckCheckX) ** 2 + (w.ly - w.stuckCheckY) ** 2;
+            if (movedSq < 100) { w.workerState = 'idle'; w.stuckMs = 0; break; }
+            w.stuckMs = 0; w.stuckCheckX = w.lx; w.stuckCheckY = w.ly;
+          }
         }
         break;
       }
       case 'chopping': break;
       case 'toFire': {
-        const dx = this.fireX - w.lx; const dy = this.fireY - w.ly; const d = Math.sqrt(dx*dx + dy*dy);
-        if (d < 52) {
+        // Navigate to a unique drop slot around the fire (outside the 62px obstacle radius).
+        // Slot radius scales with worker count so adjacent slots never overlap separation zone.
+        const FIRE_OBS_R = 62;
+        const slotAngle = w.workerSlot * (2 * Math.PI / this.numWorkerSlots);
+        const slotR = Math.max(72, this.numWorkerSlots * 8); // e.g. 72 for ≤9, 96 for 12
+        const slotX = this.fireX + Math.cos(slotAngle) * slotR;
+        const slotY = this.fireY + Math.sin(slotAngle) * slotR;
+        const dx = slotX - w.lx; const dy = slotY - w.ly; const d = Math.sqrt(dx*dx + dy*dy);
+        const deliverThresh = slotR - FIRE_OBS_R + 8; // always reachable from obstacle boundary
+        if (d < deliverThresh) {
           this.fuel = Math.min(cfg.fire.fuelMax, this.fuel + cfg.fire.fuelPerLog);
           this.coins += cfg.fire.coinsPerLog; w.workerCarrying = 0; w.workerState = 'idle'; w.activeAnim = 'idle';
+          w.stuckMs = 0;
         } else {
-          const wvFire = this.projectVelocityFromWalls((dx/d)*cfg.workerWalkSpeed, (dy/d)*cfg.workerWalkSpeed, w.lx, w.ly);
+          const wvFire = this.projectVelocityFromWalls((dx/d)*cfg.workerWalkSpeed*WORKER_SPEED_MULT, (dy/d)*cfg.workerWalkSpeed*WORKER_SPEED_MULT, w.lx, w.ly);
           w.lx += wvFire.vx*dt; w.ly += wvFire.vy*dt;
           const wSep = this.applySeparation(w.lx, w.ly, w);
           const wo = this.constrainToObstacles(wSep.x, wSep.y);
           const wc = this.wallConstrain(prevLxW, prevLyW, wo.x, wo.y);
           w.lx = wc.x; w.ly = wc.y;
+          // Stuck detector: re-path after 3s without progress
+          w.stuckMs += delta;
+          if (w.stuckMs >= 3000) {
+            const movedSq = (w.lx - w.stuckCheckX) ** 2 + (w.ly - w.stuckCheckY) ** 2;
+            if (movedSq < 100) { w.workerState = 'idle'; w.stuckMs = 0; break; }
+            w.stuckMs = 0; w.stuckCheckX = w.lx; w.stuckCheckY = w.ly;
+          }
         }
         break;
       }

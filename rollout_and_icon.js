@@ -7,7 +7,7 @@ const fs = require('fs'), crypto = require('crypto');
 const SA = JSON.parse(fs.readFileSync('C:/Users/ickmk/Desktop/projeler-claude/galeripost/google-service-account.json','utf8'));
 const PKG = 'com.cytbilisim.frostborn';
 const ICON_PATH = 'C:/Users/ickmk/Frostborn/store_assets/play_icon_512.png';
-const VERSION_CODE = '11';
+const VERSION_CODE = '7';
 
 function b64u(b){return b.toString('base64').replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'')}
 function jwt(){const n=Math.floor(Date.now()/1000),h=b64u(Buffer.from(JSON.stringify({alg:'RS256',typ:'JWT'}))),p=b64u(Buffer.from(JSON.stringify({iss:SA.client_email,scope:'https://www.googleapis.com/auth/androidpublisher',aud:'https://oauth2.googleapis.com/token',exp:n+3600,iat:n})));const s=crypto.createSign('RSA-SHA256');s.update(h+'.'+p);return h+'.'+p+'.'+b64u(s.sign(SA.private_key))}

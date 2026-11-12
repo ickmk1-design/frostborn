@@ -9,7 +9,8 @@
   "fire": {
     "iso": [8, 7], "fuelMax": 100, "fuelDrainPerSec": 5.5,
     "fuelPerLog": 20, "coinsPerLog": 5,
-    "freezeRatePerSec": 5, "freezeMax": 100
+    "freezeRatePerSec": 5, "freezeMax": 100,
+    "initialFuel": 100, "fuelDrainWarmupSec": 120, "fuelDrainWarmupMul": 0.20
   },
   "trees": [
     { "iso": [5, 4] }, { "iso": [11, 4] }, { "iso": [5, 10] }
@@ -22,7 +23,7 @@
     }
   ],
   "frozenSurvivors": [
-    { "iso": [8, 20] }, { "iso": [5, 23] }, { "iso": [11, 23] },
+    { "iso": [8, 15] }, { "iso": [5, 21] }, { "iso": [11, 21] },
     { "iso": [6, 27] }, { "iso": [10, 27] }
   ],
   "survivorFollowRangePx": 88, "survivorThawRangePx": 115, "survivorThawTimeSec": 5,
@@ -36,10 +37,10 @@
   "gate": [[8,12],[9,12]],
   "goal": { "survivorsToRescue": 5 },
   "stages": [
-    { "type": "huntAnimals",     "target": 1, "hintText": "Slay the Second Alpha — she's faster than the first!", "completedText": "Alpha slain! Clear the remaining wolves." },
-    { "type": "huntAnimals",     "target": 4, "hintText": "Hunt 3 more wolves", "completedText": "Threat neutralised! Build shelter." },
-    { "type": "buildStructure",  "target": "tent", "hintText": "Build the tent  150\uD83E\uDE99", "completedText": "Tent built! Now rescue everyone." },
-    { "type": "rescueSurvivors", "target": 5, "hintText": "Rescue all 5 survivors" }
+    { "type": "huntAnimals",     "target": 1, "hintText": "Slay the Second Alpha — she's faster than the first!", "hintTextTr": "İkinci Alfayı yen!", "completedText": "Alpha slain! Clear the remaining wolves." },
+    { "type": "huntAnimals",     "target": 4, "hintText": "Hunt 3 more wolves", "hintTextTr": "3 kurt daha avla", "completedText": "Threat neutralised! Build shelter." },
+    { "type": "buildStructure",  "target": "tent", "hintText": "Build the tent  150\uD83E\uDE99", "hintTextTr": "Çadır kur  150\uD83E\uDE99", "completedText": "Tent built! Now rescue everyone." },
+    { "type": "rescueSurvivors", "target": 5, "hintText": "Rescue all 5 survivors", "hintTextTr": "5 kişiyi kurtar" }
   ],
   "hintDurationSec": 20,
   "animals": [
@@ -65,7 +66,7 @@
       "meatDrop": 8, "meatPerHit": 0, "respawnDelaySec": 200,
       "fleeBelowHpPct": 0.0, "fleeTimeSec": 0,
       "windupMs": 450, "lungeSpeedPx": 330, "backoffDistPx": 190, "backoffSpeedPx": 200,
-      "displayScale": 1.7, "furTint": 6710886,
+      "displayScale": 1.7, "furTint": 11197951,
       "summonAtHpPct": 0.5, "summonCount": 2
     }
   },
@@ -102,9 +103,6 @@
     { "key": "prop_rock_cluster_01",     "iso": [12,22] },
     { "key": "tile_snow_drift_mound_01", "iso": [8, 24] },
     { "key": "tile_snow_drift_mound_01", "iso": [6, 26] },
-    { "key": "tile_snow_drift_mound_01", "iso": [10,26] },
-    { "key": "prop_warning_sign_red",    "iso": [7, 14] },
-    { "key": "prop_warning_sign_red",    "iso": [8, 14] },
-    { "key": "prop_warning_sign_red",    "iso": [9, 14] }
+    { "key": "tile_snow_drift_mound_01", "iso": [10,26] }
   ]
 }

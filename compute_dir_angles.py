@@ -23,7 +23,7 @@ Derivation:
 import math, json
 
 # ── render_sprites.py parameters ─────────────────────────────────────────────
-ELEV_RAD   = math.radians(32)
+ELEV_RAD   = math.radians(36)
 AZIM_RAD   = math.radians(45)
 BASE_ROT_Z = math.radians(135)
 DIR_STEP   = 2 * math.pi / 8

@@ -36,10 +36,10 @@
   "gate": [[8,12],[9,12]],
   "goal": { "survivorsToRescue": 5 },
   "stages": [
-    { "type": "huntAnimals",    "target": 1, "hintText": "Hunt a wolf \u2014 walk close to attack!", "completedText": "Wolf hunted! Now rescue survivors." },
-    { "type": "rescueSurvivors","target": 2, "hintText": "Rescue 2 frozen survivors", "completedText": "Good! Now build the tent." },
-    { "type": "buildStructure", "target": "tent", "hintText": "Build the tent  80\uD83E\uDE99", "completedText": "Tent built! Rescue more survivors." },
-    { "type": "rescueSurvivors","target": 5, "hintText": "Rescue 3 more survivors" }
+    { "type": "huntAnimals",    "target": 1, "hintText": "Hunt a wolf \u2014 walk close to attack!", "hintTextTr": "Kurda saldır!", "completedText": "Wolf hunted! Now rescue survivors." },
+    { "type": "rescueSurvivors","target": 2, "hintText": "Rescue 2 frozen survivors", "hintTextTr": "2 donmuş kişiyi kurtar", "completedText": "Good! Now build the tent." },
+    { "type": "buildStructure", "target": "tent", "hintText": "Build the tent  80\uD83E\uDE99", "hintTextTr": "Çadır kur  80\uD83E\uDE99", "completedText": "Tent built! Rescue more survivors." },
+    { "type": "rescueSurvivors","target": 5, "hintText": "Rescue 3 more survivors", "hintTextTr": "3 kişi daha kurtar" }
   ],
   "hintDurationSec": 25,
   "animals": [

@@ -9,7 +9,8 @@
   "fire": {
     "iso": [8, 7], "fuelMax": 100, "fuelDrainPerSec": 5.5,
     "fuelPerLog": 20, "coinsPerLog": 5,
-    "freezeRatePerSec": 5, "freezeMax": 100
+    "freezeRatePerSec": 5, "freezeMax": 100,
+    "initialFuel": 100, "fuelDrainWarmupSec": 120, "fuelDrainWarmupMul": 0.20
   },
   "trees": [
     { "iso": [5, 4] }, { "iso": [11, 4] }
@@ -37,10 +38,10 @@
   "gate": [[8,12],[9,12]],
   "goal": { "survivorsToRescue": 8 },
   "stages": [
-    { "type": "rescueSurvivors", "target": 2, "hintText": "Rescue 2 close survivors first!", "completedText": "Good! Now hunt — the pack is closing in." },
-    { "type": "huntAnimals",     "target": 3, "hintText": "Hunt 3 wolves to clear the path", "completedText": "Path cleared! Build shelter." },
-    { "type": "buildStructure",  "target": "tent", "hintText": "Build the tent  140\uD83E\uDE99", "completedText": "Tent up! Find all survivors." },
-    { "type": "rescueSurvivors", "target": 8, "hintText": "Rescue all 8 survivors" }
+    { "type": "rescueSurvivors", "target": 2, "hintText": "Rescue 2 close survivors first!", "hintTextTr": "Yakındaki 2 kişiyi kurtar", "completedText": "Good! Now hunt — the pack is closing in." },
+    { "type": "huntAnimals",     "target": 3, "hintText": "Hunt 3 wolves to clear the path", "hintTextTr": "3 kurdu avla", "completedText": "Path cleared! Build shelter." },
+    { "type": "buildStructure",  "target": "tent", "hintText": "Build the tent  140\uD83E\uDE99", "hintTextTr": "Çadır kur  140\uD83E\uDE99", "completedText": "Tent up! Find all survivors." },
+    { "type": "rescueSurvivors", "target": 8, "hintText": "Rescue all 8 survivors", "hintTextTr": "8 kişiyi kurtar" }
   ],
   "hintDurationSec": 20,
   "animals": [
@@ -99,8 +100,6 @@
     { "key": "tile_snow_drift_mound_01", "iso": [6, 28] },
     { "key": "tile_snow_drift_mound_01", "iso": [10,28] },
     { "key": "prop_rock_cluster_01",     "iso": [4, 30] },
-    { "key": "prop_rock_cluster_01",     "iso": [12,30] },
-    { "key": "prop_warning_sign_red",    "iso": [8, 14] },
-    { "key": "prop_warning_sign_red",    "iso": [9, 14] }
+    { "key": "prop_rock_cluster_01",     "iso": [12,30] }
   ]
 }

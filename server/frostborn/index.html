@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Frostborn: Last Camp — Survive the Frozen Winter</title>
+  <meta name="description" content="Build the last camp standing in a frozen world. Rescue survivors, chop wood, hunt for food, and keep your fire burning. Free mobile game.">
+  <meta property="og:title" content="Frostborn: Last Camp">
+  <meta property="og:description" content="Survive the endless winter. Build your camp. Save your people.">
+  <meta property="og:image" content="https://cytbilisim.com/frostborn/img/feature_graphic.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka+One&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root { --bg:#07101f; --bg2:#0d1a2e; --accent:#44aaff; --gold:#ffd700; --text:#ddeeff; --muted:#7799bb; }
+    body { background:var(--bg); color:var(--text); font-family:'Inter',sans-serif; overflow-x:hidden; }
+
+    /* LANG TOGGLE */
+    .lang-bar {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      display: flex; justify-content: flex-end; padding: 10px 20px;
+      background: linear-gradient(to bottom, rgba(7,16,31,0.9), transparent);
+    }
+    .lang-toggle {
+      display: flex; gap: 2px;
+      background: rgba(255,255,255,0.08); border-radius: 20px;
+      padding: 3px; border: 1px solid rgba(68,170,255,0.2);
+    }
+    .lang-btn {
+      padding: 5px 14px; border-radius: 16px; border: none;
+      font-family: 'Inter', sans-serif; font-size: 13px; font-weight: 600;
+      cursor: pointer; transition: background .2s, color .2s;
+      background: transparent; color: var(--muted);
+    }
+    .lang-btn.active { background: var(--accent); color: #000; }
+
+    /* HERO */
+    .hero {
+      position: relative; min-height: 100svh;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: flex-end;
+      padding-bottom: 64px; text-align: center;
+    }
+    .hero-bg {
+      position: absolute; inset: 0;
+      background: url('img/feature_graphic.png') center/cover no-repeat;
+      filter: brightness(0.5);
+    }
+    .hero-bg::after {
+      content:''; position:absolute; inset:0;
+      background: linear-gradient(to bottom, rgba(7,16,31,0.1) 0%, rgba(7,16,31,0.95) 100%);
+    }
+    .hero-content { position:relative; z-index:1; padding:0 24px; max-width:500px; }
+    .hero-icon {
+      width:110px; height:110px; border-radius:26px;
+      box-shadow:0 0 60px rgba(68,170,255,0.5), 0 4px 20px rgba(0,0,0,0.6);
+      margin-bottom:24px;
+    }
+    .hero h1 {
+      font-family:'Fredoka One',cursive;
+      font-size:clamp(52px,15vw,86px);
+      color:#fff; letter-spacing:3px; line-height:1;
+      text-shadow:0 0 60px rgba(68,170,255,0.7), 0 2px 12px rgba(0,0,0,0.9);
+    }
+    .hero-sub {
+      font-family:'Fredoka One',cursive;
+      font-size:clamp(18px,5vw,24px);
+      color:var(--accent); margin-top:8px; letter-spacing:2px;
+    }
+    .hero-tagline { margin-top:20px; font-size:clamp(15px,4vw,18px); color:#aaccee; line-height:1.7; }
+
+    .store-btns { display:flex; flex-wrap:wrap; gap:14px; justify-content:center; margin-top:36px; }
+    .store-btn {
+      display:flex; align-items:center; gap:10px;
+      padding:13px 26px; border-radius:14px;
+      text-decoration:none; font-weight:600;
+      transition:transform .15s, box-shadow .15s;
+    }
+    .store-btn:hover { transform:translateY(-3px); box-shadow:0 10px 30px rgba(0,0,0,0.5); }
+    .store-btn-apple { background:#fff; color:#000; }
+    .store-btn-google { background:#111; color:#fff; border:1px solid #333; }
+    .store-btn svg { width:26px; height:26px; flex-shrink:0; }
+    .store-btn-label { display:flex; flex-direction:column; text-align:left; }
+    .store-btn-label small { font-size:11px; font-weight:400; opacity:.65; }
+    .store-btn-label span { font-size:16px; font-weight:700; }
+
+    /* SECTIONS */
+    .section { padding:80px 20px; max-width:960px; margin:0 auto; }
+    .section-title { font-family:'Fredoka One',cursive; font-size:clamp(30px,7vw,44px); color:#fff; text-align:center; margin-bottom:10px; }
+    .section-sub { text-align:center; color:var(--muted); font-size:15px; margin-bottom:40px; }
+    .divider { width:56px; height:3px; background:linear-gradient(90deg,var(--accent),var(--gold)); border-radius:2px; margin:0 auto 44px; }
+
+    /* SCREENSHOTS */
+    .screenshots { display:flex; gap:16px; overflow-x:auto; scroll-snap-type:x mandatory; -webkit-overflow-scrolling:touch; padding-bottom:16px; }
+    .screenshots::-webkit-scrollbar { height:5px; }
+    .screenshots::-webkit-scrollbar-track { background:#1a2a3a; border-radius:3px; }
+    .screenshots::-webkit-scrollbar-thumb { background:var(--accent); border-radius:3px; }
+    .screenshot {
+      flex-shrink:0; scroll-snap-align:center;
+      width:clamp(180px,45vw,240px);
+      border-radius:20px; overflow:hidden;
+      box-shadow:0 12px 40px rgba(0,0,0,0.6);
+      border:1.5px solid rgba(68,170,255,0.25);
+      transition:transform .2s;
+    }
+    .screenshot:hover { transform:scale(1.04) translateY(-4px); }
+    .screenshot img { width:100%; display:block; }
+    .screenshot-caption { background:#0d1a2e; padding:10px 14px; font-size:13px; color:var(--muted); text-align:center; }
+
+    /* FEATURES */
+    .features { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:18px; }
+    .feature-card {
+      background:linear-gradient(135deg,#0d1a2e 0%,#0a1520 100%);
+      border:1px solid rgba(68,170,255,0.18); border-radius:18px;
+      padding:30px 20px; text-align:center;
+      transition:border-color .2s, transform .2s;
+    }
+    .feature-card:hover { border-color:rgba(68,170,255,0.5); transform:translateY(-3px); }
+    .feature-icon { font-size:38px; margin-bottom:14px; }
+    .feature-title { font-family:'Fredoka One',cursive; font-size:20px; color:#fff; margin-bottom:10px; }
+    .feature-desc { font-size:14px; color:var(--muted); line-height:1.65; }
+
+    /* FOOTER */
+    footer { background:#04090f; border-top:1px solid #1a2a3a; padding:40px 24px; text-align:center; }
+    .footer-logo { font-family:'Fredoka One',cursive; font-size:22px; color:var(--accent); margin-bottom:18px; }
+    .footer-links { display:flex; justify-content:center; gap:24px; flex-wrap:wrap; margin-bottom:18px; }
+    .footer-links a { color:var(--muted); text-decoration:none; font-size:14px; transition:color .2s; }
+    .footer-links a:hover { color:var(--accent); }
+    .footer-copy { font-size:12px; color:#2a3a4a; }
+
+    [data-tr] { display:none; }
+    .lang-tr [data-en] { display:none; }
+    .lang-tr [data-tr] { display:revert; }
+  </style>
+</head>
+<body>
+
+<div class="lang-bar">
+  <div class="lang-toggle">
+    <button class="lang-btn active" onclick="setLang('en')">EN</button>
+    <button class="lang-btn" onclick="setLang('tr')">TR</button>
+  </div>
+</div>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-bg"></div>
+  <div class="hero-content">
+    <img src="img/play_icon_512.png" alt="Frostborn" class="hero-icon">
+    <h1>FROSTBORN</h1>
+    <div class="hero-sub">Last Camp</div>
+    <p class="hero-tagline">
+      <span data-en>Survive the endless winter.<br>Build your camp. Save your people.</span>
+      <span data-tr>Sonsuz kışta hayatta kal.<br>Kampını kur. Halkını kurtar.</span>
+    </p>
+    <div class="store-btns">
+      <a href="#" class="store-btn store-btn-apple">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+        <div class="store-btn-label"><small>Download on the</small><span>App Store</span></div>
+      </a>
+      <a href="#" class="store-btn store-btn-google">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3.18 23.76c.3.17.65.19.97.08l11.65-11.65L12.14 8.5 3.18 23.76zm16.52-10.22L16.6 11.9l-3.33 3.34 3.33 3.34 3.12-1.65c.89-.47.89-1.71-.02-2.39zM3.01 1.14C2.7 1.46 2.5 1.95 2.5 2.6v18.8c0 .65.2 1.14.52 1.46l.08.07 10.53-10.52v-.25L3.09 1.07l-.08.07zm9.8 9.47l3.1-3.1-10.9-5.76L12.81 10.6z"/></svg>
+        <div class="store-btn-label"><small>Get it on</small><span>Google Play</span></div>
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- SCREENSHOTS -->
+<section class="section">
+  <h2 class="section-title">
+    <span data-en>📱 Screenshots</span>
+    <span data-tr>📱 Oynanış Görüntüleri</span>
+  </h2>
+  <p class="section-sub">
+    <span data-en>Isometric survival — build camp, chop wood, stay alive</span>
+    <span data-tr>Izometrik hayatta kalma — kamp kur, odun kes, hayatta kal</span>
+  </p>
+  <div class="divider"></div>
+  <div class="screenshots">
+    <div class="screenshot">
+      <img src="img/screenshot_camp_wide.png" alt="Camp building">
+      <div class="screenshot-caption">
+        <span data-en>🏕️ Build your camp</span>
+        <span data-tr>🏕️ Kampını inşa et</span>
+      </div>
+    </div>
+    <div class="screenshot">
+      <img src="img/screenshot_review.png" alt="Survive the winter">
+      <div class="screenshot-caption">
+        <span data-en>🔥 Keep the fire alive</span>
+        <span data-tr>🔥 Ateşi söndürme</span>
+      </div>
+    </div>
+    <div class="screenshot">
+      <img src="img/screenshot-game-chromium.png" alt="Main menu">
+      <div class="screenshot-caption">
+        <span data-en>❄ Main menu</span>
+        <span data-tr>❄ Ana menü</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section class="section" style="padding-top:0">
+  <h2 class="section-title">
+    <span data-en>Why Frostborn?</span>
+    <span data-tr>Neden Frostborn?</span>
+  </h2>
+  <p class="section-sub">
+    <span data-en>Simple controls — deep strategy</span>
+    <span data-tr>Basit kontroller — derin strateji</span>
+  </p>
+  <div class="divider"></div>
+  <div class="features">
+    <div class="feature-card">
+      <div class="feature-icon">🪵</div>
+      <div class="feature-title"><span data-en>Gather Resources</span><span data-tr>Kaynak Topla</span></div>
+      <div class="feature-desc">
+        <span data-en>Chop trees, carry logs, collect what you need to build shelter.</span>
+        <span data-tr>Ağaç kes, odun taşı, kampını inşa etmek için kaynak biriktir.</span>
+      </div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🔥</div>
+      <div class="feature-title"><span data-en>Keep the Fire Burning</span><span data-tr>Ateşi Canlı Tut</span></div>
+      <div class="feature-desc">
+        <span data-en>Your fire goes out — it's over. Keep feeding the flames.</span>
+        <span data-tr>Ateşin sönerse her şey biter. Yakıtı hiç bırakma.</span>
+      </div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🧊</div>
+      <div class="feature-title"><span data-en>Rescue Survivors</span><span data-tr>Hayatta Kalanları Kurtar</span></div>
+      <div class="feature-desc">
+        <span data-en>Find frozen people and bring them back to the warmth of the camp fire.</span>
+        <span data-tr>Donmuş insanları bul ve kamp ateşine götür.</span>
+      </div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🗺️</div>
+      <div class="feature-title"><span data-en>15 Levels</span><span data-tr>15 Bölüm</span></div>
+      <div class="feature-desc">
+        <span data-en>15 increasingly difficult levels. New dangers await in each one.</span>
+        <span data-tr>Giderek zorlaşan 15 bölüm. Her bölümde yeni tehlikeler seni bekliyor.</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="footer-logo">❄ FROSTBORN</div>
+  <div class="footer-links">
+    <a href="/frostborn/privacy/"><span data-en>Privacy Policy</span><span data-tr>Gizlilik Politikası</span></a>
+    <a href="/frostborn/terms/"><span data-en>Terms of Service</span><span data-tr>Kullanım Koşulları</span></a>
+    <a href="/frostborn/support/"><span data-en>Support</span><span data-tr>Destek</span></a>
+    <a href="mailto:info@cytbilisim.com"><span data-en>Contact</span><span data-tr>İletişim</span></a>
+  </div>
+  <div class="footer-copy">© 2024 CYT Bilişim. All rights reserved.</div>
+</footer>
+
+<script>
+  function setLang(l) {
+    document.body.classList.toggle('lang-tr', l === 'tr');
+    document.documentElement.lang = l;
+    document.querySelectorAll('.lang-btn').forEach(b => b.classList.toggle('active', b.textContent === l.toUpperCase()));
+    localStorage.setItem('fb_lang', l);
+  }
+  const saved = localStorage.getItem('fb_lang') || (navigator.language?.startsWith('tr') ? 'tr' : 'en');
+  if (saved === 'tr') setLang('tr');
+</script>
+</body>
+</html>

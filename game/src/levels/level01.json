@@ -56,9 +56,9 @@
   "gate": [[8,12],[9,12]],
   "goal": { "survivorsToRescue": 3 },
   "stages": [
-    { "type": "rescueSurvivors", "target": 1, "hintText": "Walk up to a frozen survivor!", "completedText": "Survivor found! Now build the tent." },
-    { "type": "buildStructure",  "target": "tent", "hintText": "Build the tent  65\uD83E\uDE99", "completedText": "Tent built! Rescue more survivors." },
-    { "type": "rescueSurvivors", "target": 3, "hintText": "Rescue 2 more survivors" }
+    { "type": "rescueSurvivors", "target": 1, "hintText": "Walk up to a frozen survivor!", "hintTextTr": "Donmuş kişiye git!", "completedText": "Survivor found! Now build the tent." },
+    { "type": "buildStructure",  "target": "tent", "hintText": "Build the tent  65\uD83E\uDE99", "hintTextTr": "Çadır kur  65\uD83E\uDE99", "completedText": "Tent built! Rescue more survivors." },
+    { "type": "rescueSurvivors", "target": 3, "hintText": "Rescue 2 more survivors", "hintTextTr": "2 kişi daha kurtar" }
   ],
   "hintDurationSec": 30,
   "decor": [

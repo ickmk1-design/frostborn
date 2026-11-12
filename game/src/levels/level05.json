@@ -36,9 +36,9 @@
   "gate": [[8,12],[9,12]],
   "goal": { "survivorsToRescue": 5 },
   "stages": [
-    { "type": "huntAnimals",    "target": 2, "hintText": "Hunt 2 wolves before they scatter!", "completedText": "Wolves hunted! Now build shelter." },
-    { "type": "buildStructure", "target": "tent", "hintText": "Build the tent  100\uD83E\uDE99", "completedText": "Tent up! Rescue the survivors." },
-    { "type": "rescueSurvivors","target": 5, "hintText": "Rescue 5 frozen survivors" }
+    { "type": "huntAnimals",    "target": 2, "hintText": "Hunt 2 wolves before they scatter!", "hintTextTr": "2 kurdu avla!", "completedText": "Wolves hunted! Now build shelter." },
+    { "type": "buildStructure", "target": "tent", "hintText": "Build the tent  100\uD83E\uDE99", "hintTextTr": "Çadır kur  100\uD83E\uDE99", "completedText": "Tent up! Rescue the survivors." },
+    { "type": "rescueSurvivors","target": 5, "hintText": "Rescue 5 frozen survivors", "hintTextTr": "5 kişiyi kurtar" }
   ],
   "hintDurationSec": 25,
   "animals": [

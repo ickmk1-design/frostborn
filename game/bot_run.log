@@ -1,0 +1,132 @@
+(node:79732) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/ickmk/Frostborn/game/playtest_bot.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to C:\Users\ickmk\Frostborn\game\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Server is up at http://localhost:5177
+
+=== Level 1 ===
+  Level 1: starting loop
+  [MINOR] t=12s: Low FPS: 17
+  Stage 0 complete in 37.4s
+  Stage 1 complete in 51.1s
+  [MINOR] t=160s: Worker 1 stuck 8s (state=toTree, moved=5px)
+  [MAJOR] t=180s: Stage 2 stalled >90s
+  [MINOR] t=268s: Worker 1 stuck 8s (state=toFire, moved=7px)
+  [MAJOR] t=271s: Stage 2 stalled >90s
+  [MAJOR] t=362s: Stage 2 stalled >90s
+  [MINOR] t=386s: Worker 0 stuck 8s (state=toTree, moved=1px)
+  [MAJOR] t=452s: Stage 2 stalled >90s
+  [MAJOR] t=543s: Stage 2 stalled >90s
+  [BLOCKER] t=600s: Level 1 TIMED OUT (10 min). Reached stage 2.
+
+=== Level 2 ===
+  Level 2: starting loop
+  Stage 0 complete in 32.3s
+  Stage 1 complete in 2.7s
+  Stage 2 complete in 30.4s
+  [MAJOR] t=156s: Stage 3 stalled >90s
+  [MINOR] t=180s: Worker 0 stuck 8s (state=toFire, moved=3px)
+  [MINOR] t=185s: Low FPS: 23
+  [MINOR] t=187s: Player died (death #1) at stage 3
+  [MINOR] t=191s: Low FPS: 18
+  [MINOR] t=197s: Low FPS: 17
+  [MINOR] t=202s: Low FPS: 24
+  [MINOR] t=208s: Worker 1 stuck 8s (state=toFire, moved=5px)
+  [MAJOR] t=247s: Stage 3 stalled >90s
+  [MINOR] t=331s: Worker 0 stuck 8s (state=toFire, moved=6px)
+  [MINOR] t=334s: Low FPS: 21
+  [MAJOR] t=337s: Stage 3 stalled >90s
+  [MINOR] t=341s: Low FPS: 13
+  [MINOR] t=341s: Worker 0 stuck 8s (state=toTree, moved=2px)
+  [MINOR] t=347s: Low FPS: 15
+  [MINOR] t=352s: Low FPS: 16
+  [MINOR] t=352s: Player died (death #2) at stage 3
+  [MINOR] t=359s: Low FPS: 15
+  [MINOR] t=365s: Low FPS: 16
+  [MINOR] t=370s: Low FPS: 18
+  [MINOR] t=376s: Low FPS: 19
+  [MINOR] t=381s: Low FPS: 21
+  [MINOR] t=387s: Low FPS: 20
+  [MINOR] t=392s: Low FPS: 18
+  [MINOR] t=398s: Low FPS: 20
+  [MINOR] t=403s: Low FPS: 20
+  [MINOR] t=408s: Low FPS: 18
+  [MINOR] t=414s: Low FPS: 19
+  [MINOR] t=419s: Low FPS: 19
+  [MINOR] t=425s: Low FPS: 19
+  [MAJOR] t=427s: Stage 3 stalled >90s
+  [MINOR] t=431s: Low FPS: 21
+  [MINOR] t=436s: Low FPS: 22
+  [MINOR] t=441s: Low FPS: 23
+  [MINOR] t=447s: Low FPS: 22
+  [MINOR] t=452s: Low FPS: 22
+  [MINOR] t=457s: Low FPS: 19
+  [MINOR] t=463s: Low FPS: 20
+  [MINOR] t=468s: Low FPS: 19
+  [MINOR] t=474s: Low FPS: 19
+  [MINOR] t=475s: Player died (death #3) at stage 3
+  [MINOR] t=479s: Low FPS: 20
+  [MINOR] t=485s: Low FPS: 20
+  [MINOR] t=490s: Low FPS: 18
+  [MINOR] t=496s: Low FPS: 21
+  [MINOR] t=501s: Low FPS: 21
+  [MINOR] t=506s: Low FPS: 20
+  [MINOR] t=512s: Low FPS: 19
+  [MINOR] t=517s: Low FPS: 19
+  [MAJOR] t=519s: Stage 3 stalled >90s
+  [MINOR] t=524s: Low FPS: 19
+  [MINOR] t=530s: Low FPS: 16
+  [MINOR] t=535s: Low FPS: 17
+  [MINOR] t=541s: Low FPS: 19
+  [MINOR] t=546s: Low FPS: 23
+  [MINOR] t=551s: Low FPS: 23
+  [MINOR] t=557s: Low FPS: 23
+  [MINOR] t=562s: Low FPS: 23
+  [MINOR] t=573s: Low FPS: 24
+  [MINOR] t=578s: Low FPS: 21
+  [MINOR] t=584s: Low FPS: 22
+  [MINOR] t=589s: Low FPS: 20
+  [MINOR] t=595s: Low FPS: 22
+  [MINOR] t=600s: Low FPS: 20
+  [BLOCKER] t=601s: Level 2 TIMED OUT (10 min). Reached stage 3.
+
+=== Level 3 ===
+  Level 3: starting loop
+  Stage 0 complete in 33.8s
+  Level 3 WIN in 1.0 min
+
+=== Level 4 ===
+  Level 4: starting loop
+  Stage 0 complete in 37.2s
+  [MAJOR] t=131s: Stage 1 stalled >90s
+  [MINOR] t=147s: Low FPS: 24
+  [MINOR] t=157s: Player died (death #1) at stage 1
+  [MINOR] t=180s: Low FPS: 20
+  [MINOR] t=186s: Low FPS: 19
+  [MINOR] t=189s: Player died (death #2) at stage 1
+  [MINOR] t=193s: Low FPS: 20
+  [MINOR] t=211s: Worker 0 stuck 8s (state=toFire, moved=7px)
+  [MINOR] t=220s: Worker 0 stuck 8s (state=toTree, moved=5px)
+  [MAJOR] t=222s: Stage 1 stalled >90s
+  [MINOR] t=228s: Worker 1 stuck 8s (state=toTree, moved=2px)
+  [MINOR] t=268s: Low FPS: 21
+  [MINOR] t=274s: Low FPS: 20
+  [MINOR] t=279s: Low FPS: 23
+  [MINOR] t=284s: Low FPS: 25
+  [MINOR] t=290s: Low FPS: 17
+  [MINOR] t=295s: Low FPS: 21
+  [MAJOR] t=312s: Stage 1 stalled >90s
+  [MINOR] t=325s: Player died (death #3) at stage 1
+  [MAJOR] t=403s: Stage 1 stalled >90s
+  [MINOR] t=416s: Player died (death #4) at stage 1
+  [MINOR] t=441s: Player died (death #5) at stage 1
+  [MINOR] t=445s: Worker 1 stuck 8s (state=toTree, moved=1px)
+  [MINOR] t=453s: Worker 1 stuck 8s (state=toTree, moved=6px)
+  [MAJOR] t=494s: Stage 1 stalled >90s
+  [MAJOR] t=585s: Stage 1 stalled >90s
+  [BLOCKER] t=601s: Level 4 TIMED OUT (10 min). Reached stage 1.
+
+=== Level 5 ===
+  Level 5: starting loop
+  [MAJOR] t=94s: Stage 0 stalled >90s
+  [MAJOR] t=190s: Stage 0 stalled >90s

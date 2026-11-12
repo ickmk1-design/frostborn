@@ -3,8 +3,8 @@ import { Purchases, LOG_LEVEL, PurchasesPackage } from '@revenuecat/purchases-ca
 import { grantIap } from './economy';
 
 const RC_KEYS = {
-  ios:     'appl_katRgOUBestVMHWpyYKaAhruBTx',
-  android: 'goog_PZrFFYDYNieBUbMPbYCWvGDmWtx',
+  ios:     'appl_LjAcpUJAArUKyuDOFUPxrqZYkSg',
+  android: 'goog_UlDzxeXmQDObFMgIEHfKHGXGNcn',
 };
 
 let _initialized = false;

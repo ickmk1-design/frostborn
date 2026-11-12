@@ -708,6 +708,127 @@ async function testAnimalDirections(browser, label) {
   await ctx.close();
 }
 
+// ── Worker Delivery Test ──────────────────────────────────────────────────────
+// Tests that each worker can deliver ≥10 logs to the fire without jamming.
+// Strategy: 10 simulated delivery cycles per worker — each cycle places all workers
+// at their unique radial approach position (slot angle, 122px from fire) with a log
+// and lets the game run for 2.5s. Workers walk to their slot (72px), obstacle boundary
+// stops them at ~62px (10px from slot), d<18 triggers delivery. No navigation detours
+// needed. Tests levels 1 (3 workers), 8 (7 workers), 15 (12 workers).
+async function testWorkerDelivery(browser, label) {
+  console.log(`\n--- Worker Delivery [${label}] ---`);
+
+  const ctx = await browser.newContext({ viewport: VIEWPORT });
+  const page = await ctx.newPage();
+  const col = makeCollectors(page);
+
+  await page.goto(`${BASE}/?noaudio=1`);
+  await waitCanvas(page);
+
+  let booted = false;
+  for (let i = 0; i < 40; i++) {
+    await page.waitForTimeout(500);
+    const active = await page.evaluate(() => {
+      const g = window.__game; if (!g) return [];
+      return g.scene.scenes.filter(s => s.sys.isActive()).map(s => s.sys.settings.key);
+    });
+    if (active.some(k => k && !k.toLowerCase().includes('boot') && !k.toLowerCase().includes('load'))) { booted = true; break; }
+  }
+  if (!booted) { fail(`[${label}] Worker delivery: game never booted`); await ctx.close(); return; }
+
+  // Test three representative levels: 1 (3 workers), 8 (7 workers), 15 (12 workers)
+  for (const [lk, ln, numWorkers] of [['level01',1,3],['level08',8,7],['level15',15,12]]) {
+    // Switch to this level
+    await page.evaluate(({ levelKey, levelNum }) => {
+      const g = window.__game;
+      ['BootScene','MainMenuScene','SettingsScene','LevelSelectScene','GameScene','UIScene','WinScene','LoseScene','ShopScene']
+        .forEach(k => { try { g.scene.stop(k); } catch(e){} });
+      g.scene.start('GameScene', { levelKey, levelNum });
+    }, { levelKey: lk, levelNum: ln });
+
+    let gsOk = false;
+    for (let i = 0; i < 30; i++) {
+      await page.waitForTimeout(500);
+      const active = await page.evaluate(() => {
+        const g = window.__game; if (!g) return [];
+        return g.scene.scenes.filter(s => s.sys.isActive()).map(s => s.sys.settings.key);
+      });
+      if (active.some(k => k && k.includes('GameScene'))) { gsOk = true; break; }
+    }
+    if (!gsOk) { fail(`[${label}] Worker delivery ${lk}: GameScene never active`); continue; }
+    await page.waitForTimeout(1000);
+
+    // Setup: disable win/lose, give max fuel, assign all workers unique slots
+    await page.evaluate((nw) => {
+      const sc = window.__game.scene.getScene('GameScene');
+      if (!sc) return;
+      sc.fuel = 999999;
+      sc.gameOver = false;
+      sc.goalStages = [];
+      sc.rescuedCount = 1;
+      sc.coins = 0;
+      sc.numWorkerSlots = nw; // ensure slot count matches worker count
+      for (let i = 0; i < sc.survivors.length; i++) {
+        const sv = sc.survivors[i];
+        sv.state = i < nw ? 'worker' : 'frozen';
+        sv.workerSlot = i < nw ? i : 0;
+        sv.workerCarrying = 0;
+        sv.workerState = 'idle';
+        sv.activeAnim = 'idle';
+        sv.sprite.clearTint();
+        if (sv.thawBar) { sv.thawBar.destroy(); sv.thawBar = undefined; }
+        sv.stuckMs = 0;
+      }
+    }, numWorkers);
+
+    // 10 delivery cycles: each cycle teleports workers to their approach position
+    // 50px outside their slot (slot radius + 50px), sets workerCarrying=1, waits 3s.
+    // Slot radius uses same formula as game: max(72, numSlots*8).
+    for (let cycle = 0; cycle < 10; cycle++) {
+      await page.evaluate((nw) => {
+        const sc = window.__game.scene.getScene('GameScene');
+        if (!sc) return;
+        const nSlots = sc.numWorkerSlots || nw;
+        const slotR = Math.max(72, nSlots * 8);
+        for (let i = 0; i < nw && i < sc.survivors.length; i++) {
+          const sv = sc.survivors[i];
+          if (sv.state !== 'worker') continue;
+          const angle = sv.workerSlot * (2 * Math.PI / nSlots);
+          const approachR = slotR + 50;
+          sv.lx = sc.fireX + Math.cos(angle) * approachR;
+          sv.ly = sc.fireY + Math.sin(angle) * approachR;
+          if (sv.sprite) { sv.sprite.x = sv.lx; sv.sprite.y = sv.ly; }
+          sv.workerCarrying = 1;
+          sv.workerState = 'toFire';
+          sv.activeAnim = 'carry_walk';
+          sv.stuckMs = 0; sv.stuckCheckX = sv.lx; sv.stuckCheckY = sv.ly;
+        }
+      }, numWorkers);
+      await page.waitForTimeout(3000);
+    }
+
+    // Check result: expect each of the N workers to have delivered all 10 cycles
+    const result = await page.evaluate(() => {
+      const sc = window.__game.scene.getScene('GameScene');
+      if (!sc) return { coins: 0 };
+      return { coins: Math.floor(sc.coins) };
+    });
+
+    const COINS_PER_LOG = 5;
+    const totalDeliveries = Math.floor(result.coins / COINS_PER_LOG);
+    const minExpected = numWorkers * 10;
+    if (totalDeliveries >= minExpected) {
+      pass(`[${label}] Worker delivery ${lk} (${numWorkers} workers): ${totalDeliveries} deliveries ✓`);
+    } else {
+      const stuck = minExpected - totalDeliveries;
+      fail(`[${label}] Worker delivery ${lk} (${numWorkers} workers): ${totalDeliveries}/${minExpected} deliveries — ${stuck} missed (workers jammed)`);
+    }
+  }
+
+  if (col.jsErrors.length > 0) fail(`[${label}] Worker delivery JS errors`, col.jsErrors.slice(0,2).join(' | '));
+  await ctx.close();
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 (async () => {
   const server = await serve(DIST, PORT);
@@ -754,6 +875,9 @@ async function testAnimalDirections(browser, label) {
 
     // ── 10. Animal direction facing ──
     if (wkOk) await testAnimalDirections(wk, 'WebKit');
+
+    // ── 11. Worker delivery ──
+    if (wkOk) await testWorkerDelivery(wk, 'WebKit');
 
     // ── 12. Safe areas (geometry analysis) ──
     await testSafeAreas();

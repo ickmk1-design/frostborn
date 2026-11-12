@@ -4,8 +4,9 @@
 
 **Core time drivers:**
 - **Fuel drain**: fuelDrainPerSec. At 100 fuel and 3.5/s drain → 28s to empty. Each log adds 20 fuel → 20/3.5 = 5.7s. Player must run log loops continuously.
-- **Log run time**: tree collect range 90px, player speed 130px/s. Camp tree at ~180px from fire → round trip ~2.8s + 4.5s cooldown = 1 log/7.3s per tree × 3 trees = 1 log/2.4s sustained.
-- **Coin economy**: 1 log = 5 coins. Sustained rate = 5/2.4 = 2.1 coins/s from logs alone.
+- **Log run time**: tree collect range 90px, player speed 130px/s × 1.35 = 175.5px/s. Camp tree at ~180px from fire → round trip ~2.1s + 4.5s cooldown = 1 log/6.6s per tree × 3 trees = 1 log/2.2s sustained.
+- **Coin economy**: 1 log = 5 coins. Sustained rate = 5/2.2 = 2.3 coins/s from logs alone.
+- **Speed note (tuning.ts)**: Player ×1.35, workers ×1.20 as of 2026-11-11. Bottlenecks are chop cooldowns and thaw times — no level rebalance needed.
 - **Meat economy**: 1 wolf kill (3 chops at 1300ms each = 3.9s + ~8s travel) ≈ 12s per wolf → 1 meat/12s → cooked in 3.5s → 10 coins. Rate = 10/15.5 = 0.65 coins/s.
 - **Survivor thaw**: walk to survivor + 3–4s thaw = 15–25s per survivor depending on distance.
 

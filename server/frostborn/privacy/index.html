@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Frostborn — Privacy Policy</title>
+  <meta name="description" content="Privacy Policy for the Frostborn mobile game by CYT Bilişim." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka+One&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #0a0f1e;
+      --surface:  #111827;
+      --accent:   #44aaff;
+      --gold:     #ffd700;
+      --text:     #d0e8ff;
+      --muted:    #6b8cae;
+      --radius:   12px;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    /* ── Top Nav ── */
+    .topbar {
+      width: 100%;
+      background: rgba(10,15,30,0.9);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid rgba(68,170,255,0.15);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .topbar-inner {
+      max-width: 640px;
+      margin: 0 auto;
+      padding: 12px 20px;
+    }
+    .topbar a {
+      color: var(--accent);
+      text-decoration: none;
+      font-family: 'Fredoka One', system-ui, sans-serif;
+      font-size: 1.1rem;
+      letter-spacing: 0.04em;
+    }
+    .topbar a:hover { color: #fff; }
+
+    /* ── Content ── */
+    main {
+      width: 100%;
+      max-width: 640px;
+      padding: 40px 20px 60px;
+    }
+
+    .page-header {
+      margin-bottom: 36px;
+    }
+    .page-header h1 {
+      font-family: 'Fredoka One', system-ui, sans-serif;
+      font-size: clamp(1.6rem, 7vw, 2.2rem);
+      color: #fff;
+      letter-spacing: 0.04em;
+      margin-bottom: 6px;
+    }
+    .page-header .meta {
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+
+    /* ── Policy Sections ── */
+    .policy-section {
+      margin-bottom: 32px;
+    }
+    .policy-section h2 {
+      font-family: 'Fredoka One', system-ui, sans-serif;
+      font-size: 1.05rem;
+      color: var(--accent);
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid rgba(68,170,255,0.15);
+    }
+    .policy-section p {
+      font-size: 0.93rem;
+      line-height: 1.8;
+      color: var(--text);
+    }
+    .policy-section p + p { margin-top: 10px; }
+
+    .highlight-box {
+      background: rgba(68,170,255,0.07);
+      border-left: 3px solid var(--accent);
+      border-radius: 0 var(--radius) var(--radius) 0;
+      padding: 12px 16px;
+      margin-top: 10px;
+      font-size: 0.93rem;
+      line-height: 1.7;
+    }
+
+    /* ── Contact link ── */
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+    a:hover { text-decoration: underline; }
+
+    /* ── Back Link ── */
+    .back-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 36px;
+      color: var(--muted);
+      font-size: 0.9rem;
+      text-decoration: none;
+      transition: color 0.15s;
+    }
+    .back-link:hover { color: var(--accent); text-decoration: none; }
+    .back-link::before { content: "←"; }
+
+    /* ── Footer ── */
+    footer {
+      width: 100%;
+      max-width: 640px;
+      margin: 0 auto;
+      padding: 20px 20px;
+      border-top: 1px solid rgba(68,170,255,0.12);
+      text-align: center;
+    }
+    .footer-copy {
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+  </style>
+</head>
+<body>
+
+  <nav class="topbar">
+    <div class="topbar-inner">
+      <a href="/frostborn">❄ FROSTBORN</a>
+    </div>
+  </nav>
+
+  <main>
+    <a class="back-link" href="/frostborn">Back to Frostborn</a>
+
+    <header class="page-header">
+      <h1>Privacy Policy</h1>
+      <p class="meta">Last updated: November 2024 &nbsp;·&nbsp; CYT Bilişim</p>
+    </header>
+
+    <section class="policy-section">
+      <h2>1. Data We Collect</h2>
+      <div class="highlight-box">
+        We do <strong>not</strong> collect personal data. No account creation is required to play Frostborn.
+      </div>
+      <p style="margin-top:12px;">
+        We use anonymous crash analytics to improve app stability. These reports contain no personally
+        identifiable information — only device type, OS version, and the technical details of the crash.
+      </p>
+      <p>
+        In-app purchase records are processed through RevenueCat solely to verify and restore purchases.
+        No payment data passes through our servers.
+      </p>
+    </section>
+
+    <section class="policy-section">
+      <h2>2. In-App Purchases</h2>
+      <p>
+        All transactions are processed directly by Apple App Store or Google Play. We use
+        <strong>RevenueCat</strong> as a purchase verification layer to confirm entitlements and enable
+        purchase restoration across devices.
+      </p>
+      <p>
+        We do not store, see, or handle your credit card or payment details at any point. For billing
+        disputes, please contact Apple or Google support directly.
+      </p>
+    </section>
+
+    <section class="policy-section">
+      <h2>3. Advertising</h2>
+      <p>
+        Frostborn may display optional rewarded video advertisements provided by
+        <strong>Google AdMob</strong>. These ads are always optional — watching them is never required
+        to progress in the game.
+      </p>
+      <p>
+        Ad providers such as Google may collect device identifiers (e.g., advertising ID) and usage
+        data in accordance with their own privacy policies. You can opt out of personalised ads through
+        your device's privacy settings.
+      </p>
+    </section>
+
+    <section class="policy-section">
+      <h2>4. Children</h2>
+      <p>
+        Frostborn is designed to be suitable for all ages. We do not knowingly collect personal data
+        from children under 13. If you believe a child has inadvertently provided us with personal
+        information, please contact us and we will promptly delete it.
+      </p>
+    </section>
+
+    <section class="policy-section">
+      <h2>5. Contact</h2>
+      <p>
+        If you have any questions about this Privacy Policy, please reach out to us at:<br />
+        <a href="mailto:info@cytbilisim.com">info@cytbilisim.com</a>
+      </p>
+    </section>
+  </main>
+
+  <footer>
+    <p class="footer-copy">© 2024 CYT Bilişim</p>
+  </footer>
+
+</body>
+</html>

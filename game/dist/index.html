@@ -4,18 +4,60 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Frostborn</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Fredoka+One&display=swap" rel="stylesheet">
   <style>
+    @font-face {
+      font-family: 'GameFont';
+      font-style: normal;
+      font-weight: 400;
+      font-display: swap;
+      src: url('assets/fonts/Baloo2.ttf') format('truetype');
+    }
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { background: #000; display: flex; justify-content: center; align-items: center; width: 100vw; height: 100vh; overflow: hidden; }
-    #game { width: 390px; height: 844px; overflow: hidden; margin: 0 auto; }
+    html { overflow: hidden; }
+    html, body { width: 100vw; height: 100vh; background: #0a0f1e; overflow: hidden; }
+    #game { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; overflow: hidden; }
     canvas { display: block; }
+    #splash {
+      position: fixed; inset: 0;
+      background: url('assets/ui/menu_bg.webp') center/cover no-repeat, #020510;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: flex-end;
+      padding-bottom: max(48px, env(safe-area-inset-bottom) + 48px);
+      z-index: 9999; pointer-events: none;
+      transition: opacity 0.45s ease;
+    }
+    #splash.hidden { opacity: 0; }
+    #splash-bar-bg {
+      width: min(240px, 60vw); height: 6px;
+      background: rgba(255,255,255,0.15); border-radius: 3px; overflow: hidden;
+    }
+    #splash-bar { height: 100%; width: 0%; background: #44aaff; border-radius: 3px;
+      transition: width 0.1s linear;
+    }
   </style>
-  <script type="module" crossorigin src="./assets/index-B8w_xPW5.js"></script>
+  <script type="module" crossorigin src="./assets/index-Bb7OqBBC.js"></script>
 </head>
 <body>
+  <div id="splash">
+    <div id="splash-bar-bg"><div id="splash-bar"></div></div>
+  </div>
   <div id="game"></div>
+  <script>
+    // Animate the splash bar while JS bundle loads
+    let pct = 0;
+    const bar = document.getElementById('splash-bar');
+    const iv = setInterval(() => {
+      pct = Math.min(pct + (pct < 60 ? 3 : pct < 85 ? 1 : 0.3), 92);
+      if (bar) bar.style.width = pct + '%';
+    }, 80);
+    window.__hideSplash = function() {
+      clearInterval(iv);
+      if (bar) bar.style.width = '100%';
+      const splash = document.getElementById('splash');
+      if (splash) {
+        setTimeout(() => { splash.classList.add('hidden'); setTimeout(() => splash.remove(), 450); }, 100);
+      }
+    };
+  </script>
 </body>
 </html>

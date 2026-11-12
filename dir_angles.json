@@ -1,0 +1,16 @@
+{
+  "note": "screen angle (right=0, down=90) each dir index faces; from render_sprites.py geometry",
+  "elev_deg": 32,
+  "azim_deg": 45,
+  "base_rot_z_deg": 135,
+  "angles": {
+    "0": 329.6,
+    "1": 270.0,
+    "2": 239.6,
+    "3": 209.1,
+    "4": 149.6,
+    "5": 90.0,
+    "6": 59.6,
+    "7": 29.1
+  }
+}

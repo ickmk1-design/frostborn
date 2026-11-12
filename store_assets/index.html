@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Frostborn: Last Camp — Survival Camp Builder</title>
+  <meta name="description" content="Build the last camp standing in a frozen world. Rescue survivors, chop wood, hunt for food, and keep your fire burning." />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --blue-dark: #0d1b2a;
+      --blue-mid: #1a2f45;
+      --blue-light: #2a4a6b;
+      --accent-orange: #f4830a;
+      --accent-orange-light: #f9a84a;
+      --accent-ice: #a8d4e8;
+      --text: #e8f0f8;
+      --text-muted: #8ba3bc;
+      --white: #ffffff;
+      --radius: 16px;
+      --shadow: 0 4px 24px rgba(0,0,0,.35);
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      background: var(--blue-dark);
+      color: var(--text);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* NAV */
+    nav {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(13,27,42,.92);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid rgba(244,131,10,.12);
+    }
+    .nav-inner {
+      max-width: 1100px; margin: 0 auto;
+      padding: 0 24px; height: 64px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .nav-brand { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+    .nav-logo-icon {
+      width: 36px; height: 36px;
+      background: var(--accent-orange);
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px;
+    }
+    .nav-brand-text { font-size: 1.05rem; font-weight: 700; color: var(--white); }
+    .nav-brand-sub { font-size: .75rem; color: var(--text-muted); font-weight: 400; }
+    .nav-links { display: flex; gap: 24px; align-items: center; }
+    .nav-links a { color: var(--text-muted); text-decoration: none; font-size: .9rem; transition: color .2s; }
+    .nav-links a:hover { color: var(--accent-orange); }
+
+    /* HERO */
+    .hero {
+      padding: 90px 24px 80px;
+      text-align: center;
+      position: relative; overflow: hidden;
+      background: linear-gradient(180deg, var(--blue-dark) 0%, var(--blue-mid) 60%, var(--blue-dark) 100%);
+    }
+    .hero::before {
+      content: '';
+      position: absolute; top: -120px; left: 50%;
+      transform: translateX(-50%);
+      width: 700px; height: 700px;
+      background: radial-gradient(ellipse, rgba(244,131,10,.12) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .hero-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: rgba(244,131,10,.15);
+      color: var(--accent-orange-light);
+      border: 1px solid rgba(244,131,10,.30);
+      border-radius: 100px;
+      padding: 5px 14px; font-size: .8rem; font-weight: 600;
+      margin-bottom: 28px;
+    }
+    .hero h1 {
+      font-size: clamp(2.2rem, 5vw, 3.8rem);
+      font-weight: 800; letter-spacing: -.02em;
+      color: var(--white);
+      margin-bottom: 8px;
+      line-height: 1.1;
+    }
+    .hero h1 span { color: var(--accent-orange); }
+    .hero-tagline {
+      font-size: 1.25rem; font-weight: 500;
+      color: var(--accent-ice);
+      margin-bottom: 20px;
+    }
+    .hero-desc {
+      max-width: 560px; margin: 0 auto 40px;
+      color: var(--text-muted); font-size: 1.05rem;
+    }
+    .hero-buttons { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; margin-bottom: 60px; }
+    .btn-store {
+      display: inline-flex; align-items: center; gap: 10px;
+      padding: 14px 24px;
+      border-radius: 14px; text-decoration: none;
+      font-weight: 700; font-size: .95rem;
+      transition: transform .2s, box-shadow .2s;
+    }
+    .btn-store:hover { transform: translateY(-2px); box-shadow: 0 8px 32px rgba(244,131,10,.30); }
+    .btn-appstore { background: var(--white); color: #111; }
+    .btn-appstore svg { flex-shrink: 0; }
+    .btn-googleplay { background: var(--accent-orange); color: var(--white); }
+    .btn-store-info { display: flex; flex-direction: column; }
+    .btn-store-info span:first-child { font-size: .65rem; font-weight: 400; opacity: .7; letter-spacing: .05em; text-transform: uppercase; }
+    .btn-store-info span:last-child { font-size: 1rem; font-weight: 700; }
+
+    /* SCREENSHOTS SECTION */
+    .screenshots {
+      padding: 60px 24px;
+      text-align: center;
+      background: var(--blue-mid);
+    }
+    .screenshots h2 { font-size: 1.5rem; font-weight: 700; color: var(--white); margin-bottom: 24px; }
+    .screenshots-row {
+      display: flex; gap: 16px; justify-content: center; flex-wrap: wrap;
+      max-width: 900px; margin: 0 auto;
+    }
+    .screenshot-ph {
+      width: 160px; aspect-ratio: 9/19.5;
+      background: var(--blue-light);
+      border-radius: 12px;
+      border: 1px solid rgba(168,212,232,.15);
+      display: flex; align-items: center; justify-content: center;
+      color: var(--text-muted); font-size: .75rem;
+    }
+
+    /* FEATURES */
+    .features {
+      padding: 80px 24px;
+      max-width: 1100px; margin: 0 auto;
+    }
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 24px;
+      margin-top: 48px;
+    }
+    .section-header { text-align: center; }
+    .section-header h2 { font-size: 2rem; font-weight: 800; color: var(--white); margin-bottom: 8px; }
+    .section-header p { color: var(--text-muted); font-size: 1.05rem; }
+    .feature-card {
+      background: var(--blue-mid);
+      border: 1px solid rgba(168,212,232,.10);
+      border-radius: var(--radius);
+      padding: 28px 24px;
+      transition: border-color .2s, transform .2s;
+    }
+    .feature-card:hover { border-color: rgba(244,131,10,.30); transform: translateY(-2px); }
+    .feature-icon { font-size: 2rem; margin-bottom: 14px; }
+    .feature-card h3 { font-size: 1.05rem; font-weight: 700; color: var(--white); margin-bottom: 8px; }
+    .feature-card p { color: var(--text-muted); font-size: .9rem; }
+
+    /* FOOTER */
+    footer {
+      background: rgba(0,0,0,.3);
+      border-top: 1px solid rgba(168,212,232,.08);
+      padding: 32px 24px;
+      text-align: center;
+    }
+    footer .footer-links { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; margin-bottom: 16px; }
+    footer .footer-links a { color: var(--text-muted); text-decoration: none; font-size: .85rem; transition: color .2s; }
+    footer .footer-links a:hover { color: var(--accent-orange); }
+    footer p { color: var(--text-muted); font-size: .8rem; }
+
+    @media (max-width: 600px) {
+      .nav-links { display: none; }
+      .hero h1 { font-size: 2rem; }
+    }
+  </style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-inner">
+    <a class="nav-brand" href="/frostborn/">
+      <div class="nav-logo-icon">&#x1f9ca;</div>
+      <div>
+        <div class="nav-brand-text">Frostborn: Last Camp</div>
+        <div class="nav-brand-sub">Survival Camp Builder</div>
+      </div>
+    </a>
+    <div class="nav-links">
+      <a href="#features">Features</a>
+      <a href="/frostborn/support/">Support</a>
+      <a href="/frostborn/privacy/">Privacy</a>
+    </div>
+  </div>
+</nav>
+
+<section class="hero">
+  <div class="hero-badge">&#x2744;&#xfe0f; Available Now — Free to Play</div>
+  <h1>Frostborn:<br><span>Last Camp</span></h1>
+  <div class="hero-tagline">Build the last camp. Keep the fire alive.</div>
+  <p class="hero-desc">Build the last camp standing in a frozen world. Rescue survivors, chop wood, hunt for food, and keep your fire burning. How long can your camp hold out?</p>
+  <div class="hero-buttons">
+    <a class="btn-store btn-appstore" href="https://apps.apple.com/app/id6831935786" target="_blank" rel="noopener">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+      <div class="btn-store-info">
+        <span>Download on the</span>
+        <span>App Store</span>
+      </div>
+    </a>
+    <a class="btn-store btn-googleplay" href="https://play.google.com/store/apps/details?id=com.cytbilisim.frostborn" target="_blank" rel="noopener">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M3.18 23.76c.3.17.64.24.99.2l12.37-7.15-2.63-2.63-10.73 9.58zm-1.93-20.4A1.99 1.99 0 0 0 1 4.84v14.32a2 2 0 0 0 .25 1.48l.07.07 8.03-8.03v-.19L1.32 4.42l-.07.94zm17.4 7.6L16.3 8.63l-2.76 2.76 2.76 2.75 2.37-1.37c.68-.39.68-1.02-.02-1.41zM4.17.24L16.54 7.4 13.9 10.03 3.18.45a1.14 1.14 0 0 1 .99-.21z"/></svg>
+      <div class="btn-store-info">
+        <span>Get it on</span>
+        <span>Google Play</span>
+      </div>
+    </a>
+  </div>
+</section>
+
+<section class="screenshots">
+  <h2>Screenshots</h2>
+  <div class="screenshots-row">
+    <div class="screenshot-ph">Coming Soon</div>
+    <div class="screenshot-ph">Coming Soon</div>
+    <div class="screenshot-ph">Coming Soon</div>
+    <div class="screenshot-ph">Coming Soon</div>
+    <div class="screenshot-ph">Coming Soon</div>
+  </div>
+</section>
+
+<section class="features" id="features">
+  <div class="section-header">
+    <h2>Survive the Freeze</h2>
+    <p>Every decision matters when the world has turned to ice.</p>
+  </div>
+  <div class="features-grid">
+    <div class="feature-card">
+      <div class="feature-icon">&#x1fa93;</div>
+      <h3>Chop, Build, Survive</h3>
+      <p>Gather wood to fuel your fire and construct new buildings. Every log you chop is one step closer to warmth.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">&#x1f525;</div>
+      <h3>Keep the Fire Alive</h3>
+      <p>Your campfire is the heart of your camp. Let it die and you lose everything. Manage fuel, build furnaces, and upgrade heating.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">&#x1f356;</div>
+      <h3>Hunt &amp; Fish for Food</h3>
+      <p>Send survivors to hunt wolves and fish through the ice. Keep your people fed or watch morale and health crumble.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">&#x26fa;</div>
+      <h3>Build Your Dream Camp</h3>
+      <p>Unlock dozens of buildings: barracks, watchtowers, lumber mills, storage crates, research labs and more.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">&#x1f465;</div>
+      <h3>Rescue &amp; Assign Survivors</h3>
+      <p>Find frozen survivors scattered across the map. Assign them as woodcutters, hunters, builders or guards.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">&#x2744;</div>
+      <h3>Battle the Blizzard</h3>
+      <p>Random blizzards and enemy raids test your defences. Build perimeter walls, train troops, and prepare for the worst.</p>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="footer-links">
+    <a href="/frostborn/privacy/">Privacy Policy</a>
+    <a href="/frostborn/terms/">Terms of Service</a>
+    <a href="/frostborn/support/">Support</a>
+    <a href="https://cytbilisim.com">CYT Bilisim</a>
+  </div>
+  <p>&copy; 2026 CYT Bilisim Hizmetleri. All rights reserved.</p>
+</footer>
+
+</body>
+</html>

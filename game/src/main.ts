@@ -1,5 +1,7 @@
 import Phaser from 'phaser';
 import BootScene from './scenes/BootScene';
+import MainMenuScene from './scenes/MainMenuScene';
+import SettingsScene from './scenes/SettingsScene';
 import LevelSelectScene from './scenes/LevelSelectScene';
 import GameScene from './scenes/GameScene';
 import UIScene from './scenes/UIScene';
@@ -12,20 +14,42 @@ import { initAppLifecycle } from './services/appLifecycle';
 import { initAds } from './services/ads';
 import { initPurchases } from './services/purchases';
 
-// ── Error overlay + server logging (active in all builds) ────────────────────
-function _showErrorOverlay(msg: string): void {
+// ── Known non-fatal errors to suppress from UI ───────────────────────────────
+const _IGNORE_PATTERNS = [
+  /failed to start the audio/i,
+  /audiocontext/i,
+  /audio device/i,
+  /notallowederror/i,   // audio autoplay policy
+  /the play\(\) request was interrupted/i,
+];
+
+function _isFatal(msg: string): boolean {
+  return !_IGNORE_PATTERNS.some(p => p.test(msg));
+}
+
+// ── Small dismissible banner (never full-screen) ──────────────────────────────
+function _showErrorBanner(msg: string): void {
   let el = document.getElementById('__frostborn_err') as HTMLDivElement | null;
   if (!el) {
     el = document.createElement('div');
     el.id = '__frostborn_err';
     el.style.cssText = [
-      'position:fixed;top:0;left:0;width:100%;height:100%;background:#000;',
-      'color:#ff4444;font:13px/1.5 monospace;padding:20px;white-space:pre-wrap;',
-      'z-index:99999;overflow:auto;word-break:break-all;',
+      'position:fixed;top:0;left:0;right:0;max-height:120px;overflow:auto;',
+      'background:rgba(180,0,0,0.88);color:#fff;font:12px/1.4 monospace;',
+      'padding:8px 36px 8px 12px;white-space:pre-wrap;word-break:break-all;',
+      'z-index:99999;pointer-events:auto;',
     ].join('');
+    // Dismiss button
+    const x = document.createElement('button');
+    x.textContent = '✕';
+    x.style.cssText = 'position:absolute;top:4px;right:8px;background:none;border:none;color:#fff;font-size:16px;cursor:pointer;';
+    x.onclick = () => el?.remove();
+    el.appendChild(x);
     document.body.appendChild(el);
   }
-  el.textContent += msg + '\n\n';
+  const line = document.createElement('div');
+  line.textContent = msg;
+  el.insertBefore(line, el.firstChild);
 }
 
 function _logToServer(data: Record<string, unknown>): void {
@@ -45,9 +69,9 @@ function _logToServer(data: Record<string, unknown>): void {
 }
 
 window.onerror = (msg, src, line, col, err) => {
-  const text = `[onerror] ${msg}\n${src}:${line}:${col}\n${err?.stack ?? ''}`;
-  _showErrorOverlay(text);
+  const text = `[onerror] ${msg}\n${src}:${line}:${col}`;
   _logToServer({ type: 'onerror', msg: String(msg), src, line, col, stack: err?.stack });
+  if (_isFatal(String(msg))) _showErrorBanner(text);
   return false;
 };
 
@@ -55,8 +79,10 @@ window.addEventListener('unhandledrejection', (e) => {
   const reason = e.reason;
   const msg = String(reason?.message ?? reason);
   const stack = reason?.stack ?? '';
-  _showErrorOverlay(`[unhandledrejection] ${msg}\n${stack}`);
   _logToServer({ type: 'unhandledrejection', msg, stack });
+  if (_isFatal(msg)) _showErrorBanner(`[unhandledrejection] ${msg}`);
+  // Prevent the browser from logging it to console as uncaught
+  e.preventDefault();
 });
 
 // ── Non-blocking background init helper ──────────────────────────────────────
@@ -83,19 +109,37 @@ async function boot(): Promise<void> {
   await loadProgress().catch(e => console.warn('[boot] loadProgress:', e));
   await loadEconomy().catch(e => console.warn('[boot] loadEconomy:', e));
 
+  // Ensure GameFont is loaded before creating any Phaser text
+  try { await document.fonts.load('400 24px GameFont'); } catch { /* ok */ }
+
+  // Hide the HTML splash now that JS has parsed and Phaser is about to start.
+  try { (window as any).__hideSplash?.(); } catch { /* ok */ }
+
+  // ── DPR sharpness fix ────────────────────────────────────────────────────
+  // Phaser 4 has no built-in resolution option; monkey-patch Text factory so
+  // every text object automatically renders at device pixel density.
+  const _dpr = Math.min(window.devicePixelRatio || 1, 3);
+  if (_dpr > 1) {
+    const _origText = (Phaser.GameObjects.GameObjectFactory.prototype as any).text;
+    (Phaser.GameObjects.GameObjectFactory.prototype as any).text = function (...args: unknown[]) {
+      return (_origText.apply(this, args) as Phaser.GameObjects.Text).setResolution(_dpr);
+    };
+  }
+
   // Start Phaser immediately — never block on network or native SDK inits.
-  new Phaser.Game({
+  const __phaserGame = new Phaser.Game({
     type: Phaser.AUTO,
     backgroundColor: '#1a1a2e',
     parent: 'game',
     scale: {
-      mode: Phaser.Scale.FIT,
-      autoCenter: Phaser.Scale.CENTER_BOTH,
-      width: 390,
-      height: 844,
+      mode: Phaser.Scale.RESIZE,
+      width: '100%',
+      height: '100%',
     },
-    scene: [BootScene, LevelSelectScene, GameScene, UIScene, WinScene, LoseScene, ShopScene],
+    scene: [BootScene, MainMenuScene, SettingsScene, LevelSelectScene, GameScene, UIScene, WinScene, LoseScene, ShopScene],
   });
+
+  (window as any).__game = __phaserGame;
 
   // SDK inits run in background after Phaser starts.
   // Each has an independent timeout so one hanging SDK cannot block another.
@@ -106,6 +150,6 @@ async function boot(): Promise<void> {
 
 boot().catch(e => {
   const msg = String(e?.message ?? e);
-  _showErrorOverlay(`[boot] FATAL: ${msg}\n${e?.stack ?? ''}`);
+  _showErrorBanner(`[boot] FATAL: ${msg}`);
   _logToServer({ type: 'boot_fatal', msg, stack: e?.stack });
 });

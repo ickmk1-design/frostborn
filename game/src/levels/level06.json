@@ -36,10 +36,10 @@
   "gate": [[8,12],[9,12]],
   "goal": { "survivorsToRescue": 6 },
   "stages": [
-    { "type": "rescueSurvivors", "target": 2, "hintText": "Rescue 2 survivors before the fire dies!", "completedText": "Good! Now build the tent." },
-    { "type": "buildStructure",  "target": "tent", "hintText": "Build the tent  110\uD83E\uDE99", "completedText": "Shelter up! Rescue the rest." },
-    { "type": "huntAnimals",     "target": 2, "hintText": "Clear the wolves guarding survivors", "completedText": "Path cleared!" },
-    { "type": "rescueSurvivors", "target": 6, "hintText": "Rescue all 6 survivors" }
+    { "type": "rescueSurvivors", "target": 2, "hintText": "Rescue 2 survivors before the fire dies!", "hintTextTr": "2 kişiyi hızla kurtar!", "completedText": "Good! Now build the tent." },
+    { "type": "buildStructure",  "target": "tent", "hintText": "Build the tent  110\uD83E\uDE99", "hintTextTr": "Çadır kur  110\uD83E\uDE99", "completedText": "Shelter up! Rescue the rest." },
+    { "type": "huntAnimals",     "target": 2, "hintText": "Clear the wolves guarding survivors", "hintTextTr": "Kurtları temizle", "completedText": "Path cleared!" },
+    { "type": "rescueSurvivors", "target": 6, "hintText": "Rescue all 6 survivors", "hintTextTr": "6 kişiyi kurtar" }
   ],
   "hintDurationSec": 25,
   "animals": [

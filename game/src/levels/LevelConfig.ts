@@ -18,7 +18,7 @@ export interface CookingConfig {
 export interface LevelConfig {
   name: string; tileW: number; tileH: number; originX: number; originY: number;
   player: { startIso:[number,number]; speedPx:number; carryCapacity:number; collectRangePx:number; dropRangePx:number; collectIntervalMs:number; };
-  fire: { iso:[number,number]; fuelMax:number; fuelDrainPerSec:number; fuelPerLog:number; coinsPerLog:number; freezeRatePerSec:number; freezeMax:number; };
+  fire: { iso:[number,number]; fuelMax:number; fuelDrainPerSec:number; fuelPerLog:number; coinsPerLog:number; freezeRatePerSec:number; freezeMax:number; initialFuel?:number; fuelDrainWarmupSec?:number; fuelDrainWarmupMul?:number; };
   trees: Array<{iso:[number,number]}>;
   treeLogCooldownMs: number;
   buildPads: Array<{id:string; iso:[number,number]; asset:string; costCoins:number; payRateCoinsPerSec:number; standRangePx:number;}>;

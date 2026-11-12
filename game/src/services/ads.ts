@@ -57,10 +57,18 @@ export async function initAds(): Promise<void> {
 }
 
 // ── Rewarded Ad ───────────────────────────────────────────────────────────────
-export async function showRewarded(onRewarded: () => void, onDismissed?: () => void): Promise<void> {
+export async function showRewarded(
+  onRewarded: () => void,
+  onDismissed?: () => void,
+  onNotNative?: () => void,
+): Promise<void> {
   if (!Capacitor.isNativePlatform()) {
-    // Web dev: simulate reward immediately
-    onRewarded();
+    const isDebug = typeof window !== 'undefined' && window.location.search.includes('debug');
+    if (isDebug) {
+      onRewarded(); // instant grant — only for ?debug testing
+    } else {
+      (onNotNative ?? onDismissed)?.();
+    }
     return;
   }
 
