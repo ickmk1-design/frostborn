@@ -45,6 +45,7 @@ interface TreeNode { sprite: Phaser.GameObjects.Image; onCooldown: boolean; lx: 
 
 interface Survivor {
   sprite: Phaser.GameObjects.Sprite;
+  shadowImg?: Phaser.GameObjects.Image;
   state: 'frozen' | 'following' | 'worker';
   lx: number; ly: number;
   lastDir: number;
@@ -89,6 +90,14 @@ interface Wolf {
   lastTint: number;
   // Cached last-played animation key — avoid per-frame anims.exists + getName lookups.
   lastAnimKey: string;
+  // AI tick throttle — off-screen/roam wolves only re-evaluate every ~150ms. Each
+  // wolf accumulates delta here; when it crosses the per-state threshold we run
+  // AI and reset. Visible/combat states tick every frame.
+  aiAccumMs: number;
+  // Cached inView bool from last depth/shadow pass — avoids reading x/y twice.
+  cachedInView: boolean;
+  // Pre-baked shadow Image for this wolf — scaled once, just repositioned each frame.
+  shadowImg: Phaser.GameObjects.Image;
 }
 
 const WOLF_SPECS: Record<string, WolfSpec> = {
@@ -178,8 +187,11 @@ export default class EndlessScene extends Phaser.Scene {
   private iceShatterEmitter!: Phaser.GameObjects.Particles.ParticleEmitter;
   private slashEmitter!: Phaser.GameObjects.Particles.ParticleEmitter;
   private snowDust!: Phaser.GameObjects.Particles.ParticleEmitter;
-  private shadowGfx!: Phaser.GameObjects.Graphics;       // dynamic shadows only (player/wolves)
+  private shadowGfx!: Phaser.GameObjects.Graphics;       // legacy — kept but no longer redrawn per frame
   private staticShadowGfx!: Phaser.GameObjects.Graphics; // trees + fire — drawn once in create()
+  // Pre-baked shadow texture + reusable Image sprites per dynamic entity. Moves
+  // the per-frame cost of fillEllipse into native scene-graph positioning.
+  private playerShadowImg!: Phaser.GameObjects.Image;
 
   // Sounds
   private fireSoundRef?: Phaser.Sound.BaseSound;
@@ -203,12 +215,36 @@ export default class EndlessScene extends Phaser.Scene {
   // Stored as a number on the wolf object directly (see _lastTint).
 
   // Hard cap on concurrent alive wolves to keep perf sane at late waves.
-  private static readonly WOLF_HARD_CAP = 12;
+  private static readonly WOLF_HARD_CAP = 10;
   // Despawn distance for non-aggressive roaming wolves.
-  private static readonly WOLF_DESPAWN_DIST2 = 1200 * 1200;
+  private static readonly WOLF_DESPAWN_DIST2 = 1100 * 1100;
+  // Distance (squared) within which a wolf updates every frame; outside it
+  // throttles to WOLF_FAR_AI_INTERVAL_MS.
+  private static readonly WOLF_NEAR_AI_DIST2 = 700 * 700;
+  private static readonly WOLF_FAR_AI_INTERVAL_MS = 160;
 
   // Dir angle table — matches GameScene so sprite frames align
   private static readonly DIR_ANGLES = [90.0, 28.8, 1.3, 334.1, 270.0, 205.9, 178.7, 151.2];
+
+  // Pre-interned animation keys to avoid per-frame string concatenation on the
+  // wolf AI hot path. Indexed [0..7].
+  private static readonly WOLF_WALK_KEYS = [
+    'wolf_walk_d0', 'wolf_walk_d1', 'wolf_walk_d2', 'wolf_walk_d3',
+    'wolf_walk_d4', 'wolf_walk_d5', 'wolf_walk_d6', 'wolf_walk_d7',
+  ];
+  private static readonly WOLF_ATTACK_KEYS = [
+    'wolf_attack_d0', 'wolf_attack_d1', 'wolf_attack_d2', 'wolf_attack_d3',
+    'wolf_attack_d4', 'wolf_attack_d5', 'wolf_attack_d6', 'wolf_attack_d7',
+  ];
+
+  // Depth-sort throttle — only re-emit depth on the moving set every N ms.
+  private depthSortMs = 0;
+  // Snow dust emission throttle — the original emitted ~2 particles per bob
+  // trough (~5Hz), which is a lot of particle churn at 10+ wolves nearby.
+  private snowDustAccum = 0;
+
+  // Reused view-rect scratch — avoids closure alloc per frame.
+  private viewL = 0; private viewR = 0; private viewT = 0; private viewB = 0;
 
   constructor() { super({ key: 'EndlessScene' }); }
 
@@ -444,11 +480,13 @@ export default class EndlessScene extends Phaser.Scene {
 
     // Blizzard emitter — follows the camera, bursts during blizzard events.
     // Uses the 'effect_blizzard_snow_particles' texture; falls back to snowpuff.
+    // Freq relaxed from 25 → 55ms (18 particles/s instead of 40) — the storm
+    // still reads as heavy but costs 55% less particle churn.
     const blizKey = this.textures.exists('effect_blizzard_snow_particles') ? 'effect_blizzard_snow_particles' : 'snowpuff';
     this.blizzardEmitter = this.add.particles(0, 0, blizKey, {
       speed: { min: 240, max: 420 }, angle: { min: 170, max: 200 },
       scale: { start: 0.35, end: 0.05 }, alpha: { start: 0.6, end: 0 },
-      lifespan: 1400, frequency: 25, emitting: false,
+      lifespan: 1200, frequency: 55, emitting: false,
     }).setScrollFactor(0).setDepth(3500);
 
     // Shadow layers — split static (trees + fire, drawn once) from dynamic
@@ -461,6 +499,25 @@ export default class EndlessScene extends Phaser.Scene {
       this.staticShadowGfx.fillEllipse(tree.lx, tree.ly, 54, 20);
     }
     this.shadowGfx = this.add.graphics().setDepth(2);
+
+    // Pre-render a reusable ellipse shadow texture — dynamic shadows are drawn
+    // as Images scaled to the right size, so we never hit the earcut/fillEllipse
+    // path per frame (that was eating ~20% CPU in the L15 profile and showed up
+    // similarly here).
+    if (!this.textures.exists('endless_shadow_tex')) {
+      const SW = 64; const SH = 24;
+      const sc = document.createElement('canvas');
+      sc.width = SW; sc.height = SH;
+      const sctx = sc.getContext('2d')!;
+      sctx.fillStyle = 'rgba(0,0,0,0.20)';
+      sctx.beginPath();
+      sctx.ellipse(SW/2, SH/2, SW/2 - 1, SH/2 - 1, 0, 0, Math.PI * 2);
+      sctx.fill();
+      this.textures.addCanvas('endless_shadow_tex', sc as HTMLCanvasElement);
+    }
+    // Player shadow — persistent Image we just reposition each frame.
+    this.playerShadowImg = this.add.image(0, 0, 'endless_shadow_tex')
+      .setDisplaySize(44, 16).setDepth(2);
 
     // ── Player sprite ──────────────────────────────────────────────────────
     const ps = isoToScreen(MAP.playerStartIso[0], MAP.playerStartIso[1], MAP.originX, MAP.originY);
@@ -645,6 +702,11 @@ export default class EndlessScene extends Phaser.Scene {
     if (spec.furTint !== 0xffffff) sprite.setTint(spec.furTint);
     this.depthGroup.push(sprite);
 
+    // Pre-baked shadow — scaled to wolf display size once, repositioned per frame.
+    const sScale = spec.displayScale;
+    const shadowImg = this.add.image(sx, sy, 'endless_shadow_tex')
+      .setDisplaySize(54 * sScale, 20 * sScale).setDepth(2);
+
     const wolf: Wolf = {
       sprite, spec, hp: spec.hp, maxHp: spec.hp,
       lx: sx, ly: sy, dir: 0,
@@ -654,6 +716,8 @@ export default class EndlessScene extends Phaser.Scene {
       roamChangeMs: 0, roamTargetX: sx, roamTargetY: sy,
       bobPhase: Math.random() * Math.PI * 2, displaySize,
       lastTint: spec.furTint, lastAnimKey: '',
+      aiAccumMs: 0, cachedInView: false,
+      shadowImg,
     };
     this.pickWolfRoam(wolf);
     this.wolves.push(wolf);
@@ -677,8 +741,11 @@ export default class EndlessScene extends Phaser.Scene {
     iceGfx.fillRoundedRect(sx - IXO, sy - IYO, IW, IH, 7);
     iceGfx.strokeRoundedRect(sx - IXO, sy - IYO, IW, IH, 7);
 
+    const shadowImg = this.add.image(sx, sy, 'endless_shadow_tex')
+      .setDisplaySize(42, 15).setDepth(2);
+
     this.survivors.push({
-      sprite, state: 'frozen',
+      sprite, shadowImg, state: 'frozen',
       lx: sx, ly: sy,
       lastDir: 4, pendingDir: -1, pendingDirMs: 0,
       iceGfx, workerCarrying: 0,
@@ -697,25 +764,53 @@ export default class EndlessScene extends Phaser.Scene {
     return best;
   }
 
+  // Scratch result buffer for stepDir — avoids allocating a 3-field object per
+  // entity per frame (player + N survivors + N workers).
+  private _dirResult = { lastDir: 0, pendingDir: -1, pendingMs: 0 };
   private stepDir(
     lastDir: number, pendingDir: number, pendingMs: number,
     rawDir: number, delta: number,
   ): { lastDir: number; pendingDir: number; pendingMs: number } {
-    if (rawDir < 0 || rawDir === lastDir) return { lastDir, pendingDir: -1, pendingMs: 0 };
-    if (rawDir !== pendingDir) return { lastDir, pendingDir: rawDir, pendingMs: 0 };
+    const r = this._dirResult;
+    if (rawDir < 0 || rawDir === lastDir) {
+      r.lastDir = lastDir; r.pendingDir = -1; r.pendingMs = 0;
+      return r;
+    }
+    if (rawDir !== pendingDir) {
+      r.lastDir = lastDir; r.pendingDir = rawDir; r.pendingMs = 0;
+      return r;
+    }
     const ms2 = pendingMs + delta;
-    if (ms2 >= 100) return { lastDir: pendingDir, pendingDir: -1, pendingMs: 0 };
-    return { lastDir, pendingDir, pendingMs: ms2 };
+    if (ms2 >= 100) {
+      r.lastDir = pendingDir; r.pendingDir = -1; r.pendingMs = 0;
+      return r;
+    }
+    r.lastDir = lastDir; r.pendingDir = pendingDir; r.pendingMs = ms2;
+    return r;
   }
 
+  // Pre-interned walk/chop anim key tables for hero + worker. Avoids string
+  // concat per call on the movement hot path.
+  private static readonly HERO_WALK = ['hero_walk_d0','hero_walk_d1','hero_walk_d2','hero_walk_d3','hero_walk_d4','hero_walk_d5','hero_walk_d6','hero_walk_d7'];
+  private static readonly HERO_CHOP = ['hero_chop_d0','hero_chop_d1','hero_chop_d2','hero_chop_d3','hero_chop_d4','hero_chop_d5','hero_chop_d6','hero_chop_d7'];
+  private static readonly WORKER_WALK = ['worker_walk_d0','worker_walk_d1','worker_walk_d2','worker_walk_d3','worker_walk_d4','worker_walk_d5','worker_walk_d6','worker_walk_d7'];
+  private static readonly WORKER_CHOP = ['worker_chop_d0','worker_chop_d1','worker_chop_d2','worker_chop_d3','worker_chop_d4','worker_chop_d5','worker_chop_d6','worker_chop_d7'];
+  private static readonly HERO_FRAMES = ['hero_walk_d0_f0','hero_walk_d1_f0','hero_walk_d2_f0','hero_walk_d3_f0','hero_walk_d4_f0','hero_walk_d5_f0','hero_walk_d6_f0','hero_walk_d7_f0'];
+  private static readonly WORKER_FRAMES = ['worker_walk_d0_f0','worker_walk_d1_f0','worker_walk_d2_f0','worker_walk_d3_f0','worker_walk_d4_f0','worker_walk_d5_f0','worker_walk_d6_f0','worker_walk_d7_f0'];
+
   private playCharAnim(sprite: Phaser.GameObjects.Sprite, char: string, anim: string, dir: number): void {
-    const key = `${char}_${anim}_d${dir}`;
-    if (this.anims.exists(key) && sprite.anims.getName() !== key) sprite.play(key, true);
+    // Lookup pre-interned key. anims.exists was the single most costly call on
+    // some frames — we drop it because create() guarantees the 32 keys exist.
+    const key = anim === 'chop'
+      ? (char === 'hero' ? EndlessScene.HERO_CHOP[dir] : EndlessScene.WORKER_CHOP[dir])
+      : (char === 'hero' ? EndlessScene.HERO_WALK[dir] : EndlessScene.WORKER_WALK[dir]);
+    const curAnim = (sprite.anims as any).currentAnim;
+    if (!curAnim || curAnim.key !== key) sprite.play(key, true);
   }
 
   private showStaticFrame(sprite: Phaser.GameObjects.Sprite, char: string, dir: number): void {
     if (sprite.anims.isPlaying) sprite.anims.stop();
-    sprite.setFrame(`${char}_walk_d${dir}_f0`);
+    sprite.setFrame(char === 'hero' ? EndlessScene.HERO_FRAMES[dir] : EndlessScene.WORKER_FRAMES[dir]);
   }
 
   private pickWolfRoam(w: Wolf): void {
@@ -759,11 +854,11 @@ export default class EndlessScene extends Phaser.Scene {
       return;
     }
 
-    // Hit flash
+    // Hit flash — only toggle tint on state transitions, not every frame.
     if (this.playerFlashMs > 0) {
+      const wasFlashing = this.playerFlashMs > 0;
       this.playerFlashMs = Math.max(0, this.playerFlashMs - delta);
-      this.playerSprite.setTint(this.playerFlashMs > 0 ? 0xff2222 : 0xffffff);
-      if (this.playerFlashMs <= 0) this.playerSprite.clearTint();
+      if (wasFlashing && this.playerFlashMs <= 0) this.playerSprite.clearTint();
     }
     // Knockback decay
     if (this.playerKnockVX !== 0 || this.playerKnockVY !== 0) {
@@ -838,12 +933,15 @@ export default class EndlessScene extends Phaser.Scene {
     this.playerSprite.x = this.playerLX;
     this.playerSprite.y = this.playerLY + this.playerBobY;
 
-    // Snow dust on step
-    if (isMoving && Math.abs(Math.sin(this.playerWaddlePhase)) < 0.08) {
+    // Snow dust on step — throttle to at most every 180ms so we don't flood the
+    // particle system at wave 5+ when the player is constantly moving.
+    this.snowDustAccum = Math.max(0, this.snowDustAccum - delta);
+    if (isMoving && this.snowDustAccum <= 0 && Math.abs(Math.sin(this.playerWaddlePhase)) < 0.1) {
       const normLen = Math.sqrt(velX * velX + velY * velY);
       if (normLen > 0) this.snowDust.emitParticleAt(
-        this.playerLX - (velX / normLen) * 10, this.playerLY - (velY / normLen) * 6, 2,
+        this.playerLX - (velX / normLen) * 10, this.playerLY - (velY / normLen) * 6, 1,
       );
+      this.snowDustAccum = 180;
     }
 
     // Log icons stacked on back — only touch visible icons; and only when we
@@ -996,24 +1094,31 @@ export default class EndlessScene extends Phaser.Scene {
     this.updateWolves(delta, dt, time);
 
     // ── Shadows ─────────────────────────────────────────────────────────────
+    // Reuse scratch view-rect (populated once/frame, no closure alloc).
     const cam = this.cameras.main;
     const camLeft = cam.scrollX - 100;
     const camRight = cam.scrollX + cam.width / cam.zoom + 100;
     const camTop = cam.scrollY - 100;
     const camBottom = cam.scrollY + cam.height / cam.zoom + 100;
-    const inView = (x: number, y: number) => x >= camLeft && x <= camRight && y >= camTop && y <= camBottom;
+    this.viewL = camLeft; this.viewR = camRight; this.viewT = camTop; this.viewB = camBottom;
 
-    // Dynamic shadows only — player, in-view survivors + wolves. Trees + fire
-    // are baked into staticShadowGfx (created once). This cuts fillEllipse
-    // calls from ~30/frame to ~10/frame typical.
-    this.shadowGfx.clear();
-    this.shadowGfx.fillStyle(0x000000, 0.20);
-    this.shadowGfx.fillEllipse(this.playerLX, this.playerLY, 44, 16);
-    for (const sv of this.survivors) if (inView(sv.lx, sv.ly)) this.shadowGfx.fillEllipse(sv.lx, sv.ly, 42, 15);
-    for (const w of this.wolves) {
-      if (w.state === 'dead' || !inView(w.lx, w.ly)) continue;
-      const s = w.displaySize / 144;
-      this.shadowGfx.fillEllipse(w.lx, w.ly, 54 * s, 20 * s);
+    // Dynamic shadows — pre-baked Image sprites per entity, just repositioned
+    // and visibility-toggled per frame. No fillEllipse / earcut cost.
+    this.playerShadowImg.setPosition(this.playerLX, this.playerLY);
+    for (let si = 0; si < this.survivors.length; si++) {
+      const sv = this.survivors[si];
+      const vis = sv.lx >= camLeft && sv.lx <= camRight && sv.ly >= camTop && sv.ly <= camBottom;
+      if (sv.shadowImg) {
+        if (sv.shadowImg.visible !== vis) sv.shadowImg.setVisible(vis);
+        if (vis) sv.shadowImg.setPosition(sv.lx, sv.ly);
+      }
+    }
+    for (let wi = 0; wi < this.wolves.length; wi++) {
+      const w = this.wolves[wi];
+      const alive = w.state !== 'dead';
+      const vis = alive && w.cachedInView;
+      if (w.shadowImg.visible !== vis) w.shadowImg.setVisible(vis);
+      if (vis) w.shadowImg.setPosition(w.lx, w.ly);
     }
 
     // ── Player HP bar ──────────────────────────────────────────────────────
@@ -1027,20 +1132,35 @@ export default class EndlessScene extends Phaser.Scene {
       this.playerHpBarGfx.fillStyle(col, 1).fillRoundedRect(bx, by, Math.max(0, bw * pct), 6, 2);
     }
 
-    // ── Fire glow anim ─────────────────────────────────────────────────────
-    const fuelPct = this.fuel / FUEL_MAX;
-    const flicker = 0.9 + 0.2 * Math.sin(time / 180) + 0.1 * Math.sin(time / 73);
-    this.fireGlow.setScale((0.6 + fuelPct * 0.8) * flicker).setAlpha(0.4 + fuelPct * 0.5);
-    const fSnd = this.fireSoundRef as Phaser.Sound.WebAudioSound;
-    if (fSnd?.setVolume) fSnd.setVolume(0.08 + fuelPct * 0.38);
+    // ── Fire glow anim — throttle to every ~100ms. The flicker is eye-candy;
+    // 10Hz is indistinguishable from 60Hz and saves a setScale WebGL quad
+    // dirty every frame.
+    if ((this.sceneTimeMs | 0) % 96 < delta) {
+      const fuelPct = this.fuel / FUEL_MAX;
+      const flicker = 0.9 + 0.2 * Math.sin(time / 180) + 0.1 * Math.sin(time / 73);
+      this.fireGlow.setScale((0.6 + fuelPct * 0.8) * flicker).setAlpha(0.4 + fuelPct * 0.5);
+      const fSnd = this.fireSoundRef as Phaser.Sound.WebAudioSound;
+      if (fSnd?.setVolume) fSnd.setVolume(0.08 + fuelPct * 0.38);
+    }
 
-    // ── Depth sort — only moving / in-view ────────────────────────────────
-    for (const sp of this.depthGroup) {
-      if (!inView(sp.x, sp.y)) continue;
-      const y = sp.y;
-      if ((sp as any)._lastDepthY === y) continue;
-      (sp as any)._lastDepthY = y;
-      sp.setDepth(sp === this.fireSprite ? y + 17 : y);
+    // ── Depth sort — throttle to ~15Hz. The isometric depth is driven by y,
+    // which only changes meaningfully on sub-tile movement; redoing every frame
+    // was pointless.
+    this.depthSortMs += delta;
+    if (this.depthSortMs >= 66) {
+      this.depthSortMs = 0;
+      const dg = this.depthGroup;
+      const fireRef = this.fireSprite;
+      for (let di = 0; di < dg.length; di++) {
+        const sp = dg[di];
+        const x = sp.x; const y = sp.y;
+        if (x < camLeft || x > camRight || y < camTop || y > camBottom) continue;
+        // Bucket y into 2-px buckets — sub-pixel bob causes cache miss otherwise.
+        const by2 = y | 0;
+        if ((sp as any)._lastDepthY === by2) continue;
+        (sp as any)._lastDepthY = by2;
+        sp.setDepth(sp === fireRef ? y + 17 : y);
+      }
     }
 
     // HUD + joystick render
@@ -1048,26 +1168,27 @@ export default class EndlessScene extends Phaser.Scene {
     this.renderJoystick();
   }
 
+  // Scratch for worker moveToward — avoids closure allocation per worker/frame.
+  private _wMoveD = 0;
+  private _workerMoveTo(sv: Survivor, tx: number, ty: number, dt: number, delta: number, speed: number): void {
+    const dx = tx - sv.lx; const dy = ty - sv.ly;
+    const d = Math.sqrt(dx * dx + dy * dy);
+    this._wMoveD = d;
+    if (d > 2) {
+      const mv = Math.min(d, speed * dt);
+      sv.lx += (dx / d) * mv; sv.ly += (dy / d) * mv;
+    }
+    const rd = this.velToDir(dx, dy);
+    const sd = this.stepDir(sv.lastDir, sv.pendingDir, sv.pendingDirMs, rd, delta);
+    sv.lastDir = sd.lastDir; sv.pendingDir = sd.pendingDir; sv.pendingDirMs = sd.pendingMs;
+    if (d > 4) this.playCharAnim(sv.sprite, 'worker', 'walk', sv.lastDir);
+    else this.showStaticFrame(sv.sprite, 'worker', sv.lastDir);
+    sv.sprite.setPosition(sv.lx, sv.ly);
+  }
+
   private updateWorker(sv: Survivor, dt: number, delta: number): void {
     if (!sv.workerState) sv.workerState = 'idle';
     const WORKER_SPEED = 78 * WORKER_SPEED_MULT;
-
-    const moveToward = (tx: number, ty: number): number => {
-      const dx = tx - sv.lx; const dy = ty - sv.ly;
-      const d = Math.sqrt(dx * dx + dy * dy);
-      if (d > 2) {
-        const mv = Math.min(d, WORKER_SPEED * dt);
-        sv.lx += (dx / d) * mv; sv.ly += (dy / d) * mv;
-      }
-      // animate
-      const rd = this.velToDir(dx, dy);
-      const sd = this.stepDir(sv.lastDir, sv.pendingDir, sv.pendingDirMs, rd, delta);
-      sv.lastDir = sd.lastDir; sv.pendingDir = sd.pendingDir; sv.pendingDirMs = sd.pendingMs;
-      if (d > 4) this.playCharAnim(sv.sprite, 'worker', 'walk', sv.lastDir);
-      else this.showStaticFrame(sv.sprite, 'worker', sv.lastDir);
-      sv.sprite.setPosition(sv.lx, sv.ly);
-      return d;
-    };
 
     if (sv.workerState === 'idle') {
       // Pick a random tree
@@ -1079,8 +1200,8 @@ export default class EndlessScene extends Phaser.Scene {
     if (sv.workerState === 'toTree') {
       const t2 = this.trees[sv.workerTreeIdx ?? 0];
       if (!t2) { sv.workerState = 'idle'; return; }
-      const d = moveToward(t2.lx, t2.ly);
-      if (d < 60) {
+      this._workerMoveTo(sv, t2.lx, t2.ly, dt, delta, WORKER_SPEED);
+      if (this._wMoveD < 60) {
         sv.workerState = 'chopping'; sv.workerChopMs = 5500;
         this.playCharAnim(sv.sprite, 'worker', 'chop', sv.lastDir);
       }
@@ -1091,8 +1212,8 @@ export default class EndlessScene extends Phaser.Scene {
         sv.workerState = 'toFire';
       }
     } else if (sv.workerState === 'toFire') {
-      const d = moveToward(this.fireX, this.fireY - 10);
-      if (d < 70) {
+      this._workerMoveTo(sv, this.fireX, this.fireY - 10, dt, delta, WORKER_SPEED);
+      if (this._wMoveD < 70) {
         if (sv.workerCarrying > 0) {
           this.fuel = Math.min(FUEL_MAX, this.fuel + FUEL_PER_LOG * sv.workerCarrying);
           sv.workerCarrying = 0;
@@ -1122,6 +1243,8 @@ export default class EndlessScene extends Phaser.Scene {
     const hasAtlas = this.hasWolfAtlas;
     // Pre-compute aggro-cull squared radius multiplier
     const DESPAWN_D2 = EndlessScene.WOLF_DESPAWN_DIST2;
+    const NEAR_D2 = EndlessScene.WOLF_NEAR_AI_DIST2;
+    const FAR_AI_MS = EndlessScene.WOLF_FAR_AI_INTERVAL_MS;
 
     // Iterate with for-i so we can splice-free remove at the end. We collect
     // destroyed indices and compact in one pass to avoid per-element splices.
@@ -1134,10 +1257,12 @@ export default class EndlessScene extends Phaser.Scene {
           w.deathMs = Math.max(0, w.deathMs - delta);
           if (w.sprite.active) {
             w.sprite.setAlpha(w.deathMs / 600).setAngle(w.sprite.angle + delta * 0.12);
+            w.shadowImg.setAlpha(w.deathMs / 600);
             if (w.deathMs <= 0) {
               const di = this.depthGroup.indexOf(w.sprite);
               if (di >= 0) this.depthGroup.splice(di, 1);
               w.sprite.destroy();
+              w.shadowImg.destroy();
               continue; // drop from wolves list (writeIdx not advanced)
             }
           }
@@ -1160,15 +1285,34 @@ export default class EndlessScene extends Phaser.Scene {
         const di = this.depthGroup.indexOf(w.sprite);
         if (di >= 0) this.depthGroup.splice(di, 1);
         w.sprite.destroy();
+        w.shadowImg.destroy();
         continue;
       }
 
-      // Off-screen roam: skip full AI (cheap heartbeat only).
+      // Off-screen + far from player: throttle AI to FAR_AI_MS. Wolves pending
+      // a tick accumulate delta; wolves that just fired a tick on this frame get
+      // a `thisFrameDt` matching the accumulated interval (not raw delta).
       const inViewHere = w.lx >= camLeft && w.lx <= camRight && w.ly >= camTop && w.ly <= camBottom;
+      w.cachedInView = inViewHere;
+      const isCombat = (w.state !== 'roam');
+      const canThrottle = !inViewHere && !isCombat && d2ToPlayer > NEAR_D2;
+      if (canThrottle) {
+        w.aiAccumMs += delta;
+        if (w.aiAccumMs < FAR_AI_MS) {
+          if (writeIdx !== ri) this.wolves[writeIdx] = w;
+          writeIdx++;
+          continue;
+        }
+      }
+      const effDelta = canThrottle ? w.aiAccumMs : delta;
+      const effDt = effDelta / 1000;
+      w.aiAccumMs = 0;
+
+      // Off-screen roam: skip full AI (cheap heartbeat only).
       if (w.state === 'roam' && !inViewHere) {
         const aggroExt = w.spec.aggroRange * 1.8;
         if (d2ToPlayer > aggroExt * aggroExt) {
-          w.roamChangeMs = Math.max(0, w.roamChangeMs - delta);
+          w.roamChangeMs = Math.max(0, w.roamChangeMs - effDelta);
           if (writeIdx !== ri) this.wolves[writeIdx] = w;
           writeIdx++;
           continue;
@@ -1181,20 +1325,20 @@ export default class EndlessScene extends Phaser.Scene {
       const aggroR2 = aggroRange * aggroRange;
 
       if (w.state === 'circle') {
-        w.circleAngle += w.circleDir * 0.9 * dt;
+        w.circleAngle += w.circleDir * 0.9 * effDt;
         const tx = this.playerLX + Math.cos(w.circleAngle) * 140;
         const ty = this.playerLY + Math.sin(w.circleAngle) * 140 * 0.5;
         const dx = tx - w.lx; const dy = ty - w.ly;
         const d = Math.sqrt(dx * dx + dy * dy);
-        if (d > 4) { w.lx += (dx / d) * w.spec.aggroSpeed * 0.75 * dt; w.ly += (dy / d) * w.spec.aggroSpeed * 0.75 * dt; }
+        if (d > 4) { w.lx += (dx / d) * w.spec.aggroSpeed * 0.75 * effDt; w.ly += (dy / d) * w.spec.aggroSpeed * 0.75 * effDt; }
         if (w.hitFlashMs <= 0) this.setWolfTint(w, 0xffccaa);
-        w.stateTimer = Math.max(0, w.stateTimer - delta);
+        w.stateTimer = Math.max(0, w.stateTimer - effDelta);
         if (w.stateTimer <= 0) { w.state = 'windup'; w.stateTimer = w.spec.windupMs; w.lungeTargetX = this.playerLX; w.lungeTargetY = this.playerLY; }
         else if (d2ToPlayer > aggroR2 * 6.25) { // (2.5)^2 = 6.25
           w.state = 'roam'; this.setWolfTint(w, w.spec.furTint); this.pickWolfRoam(w);
         }
       } else if (w.state === 'windup') {
-        w.stateTimer = Math.max(0, w.stateTimer - delta);
+        w.stateTimer = Math.max(0, w.stateTimer - effDelta);
         const prog = 1 - w.stateTimer / w.spec.windupMs;
         const bs = w.displaySize / 192;
         const crouch = 1 - 0.12 * Math.sin(prog * Math.PI);
@@ -1206,12 +1350,12 @@ export default class EndlessScene extends Phaser.Scene {
           w.sprite.setDisplaySize(w.displaySize, w.displaySize);
         }
       } else if (w.state === 'lunge') {
-        w.stateTimer = Math.max(0, w.stateTimer - delta);
+        w.stateTimer = Math.max(0, w.stateTimer - effDelta);
         const dx = w.lungeTargetX - w.lx; const dy = w.lungeTargetY - w.ly;
         const d = Math.sqrt(dx * dx + dy * dy);
-        if (d > 10) { w.lx += (dx / d) * w.spec.lungeSpeedPx * dt; w.ly += (dy / d) * w.spec.lungeSpeedPx * dt; }
+        if (d > 10) { w.lx += (dx / d) * w.spec.lungeSpeedPx * effDt; w.ly += (dy / d) * w.spec.lungeSpeedPx * effDt; }
         if (w.hitFlashMs <= 0) this.setWolfTint(w, 0xff4422);
-        w.biteMs = Math.max(0, w.biteMs - delta);
+        w.biteMs = Math.max(0, w.biteMs - effDelta);
         const biteR = w.spec.attackRange * 0.8;
         if (!this.playerDead && w.biteMs <= 0 && d2ToPlayer < biteR * biteR) {
           w.biteMs = w.spec.biteIntervalMs;
@@ -1219,12 +1363,12 @@ export default class EndlessScene extends Phaser.Scene {
           w.state = 'backoff'; w.stateTimer = 500;
         } else if (w.stateTimer <= 0 || d < 8) { w.state = 'backoff'; w.stateTimer = 450; }
       } else if (w.state === 'backoff') {
-        w.stateTimer = Math.max(0, w.stateTimer - delta);
+        w.stateTimer = Math.max(0, w.stateTimer - effDelta);
         const dx = w.lx - this.playerLX; const dy = w.ly - this.playerLY;
         const d = Math.sqrt(dx * dx + dy * dy);
         if (d < w.spec.backoffDistPx && d > 1) {
-          w.lx += (dx / d) * w.spec.backoffSpeedPx * dt;
-          w.ly += (dy / d) * w.spec.backoffSpeedPx * dt;
+          w.lx += (dx / d) * w.spec.backoffSpeedPx * effDt;
+          w.ly += (dy / d) * w.spec.backoffSpeedPx * effDt;
         }
         if (w.hitFlashMs <= 0) this.setWolfTint(w, 0xffccaa);
         if (w.stateTimer <= 0) {
@@ -1235,11 +1379,11 @@ export default class EndlessScene extends Phaser.Scene {
         }
       } else {
         // Roam
-        w.roamChangeMs = Math.max(0, w.roamChangeMs - delta);
+        w.roamChangeMs = Math.max(0, w.roamChangeMs - effDelta);
         if (w.roamChangeMs <= 0) this.pickWolfRoam(w);
         const dx = w.roamTargetX - w.lx; const dy = w.roamTargetY - w.ly;
         const d2 = dx * dx + dy * dy;
-        if (d2 > 64) { const d = Math.sqrt(d2); w.lx += (dx / d) * w.spec.speed * dt; w.ly += (dy / d) * w.spec.speed * dt; }
+        if (d2 > 64) { const d = Math.sqrt(d2); w.lx += (dx / d) * w.spec.speed * effDt; w.ly += (dy / d) * w.spec.speed * effDt; }
         if (d2ToPlayer < aggroR2) {
           w.state = 'circle';
           w.circleAngle = Math.atan2(w.ly - this.playerLY, w.lx - this.playerLX);
@@ -1249,37 +1393,40 @@ export default class EndlessScene extends Phaser.Scene {
       }
 
       // Animation + dir — only touch anim system when the target key actually
-      // changed. Avoid per-frame this.textures.exists + this.anims.exists.
+      // changed. Uses pre-interned key tables (no string concat on hot path).
       if (hasAtlas) {
         const mvdx = w.lx - prevLx; const mvdy = w.ly - prevLy;
         const rd = this.velToDir(mvdx * 20, mvdy * 20);
         if (rd >= 0) w.dir = rd;
         const attackState = (w.state === 'lunge' || w.state === 'windup');
-        const want = attackState ? ('wolf_attack_d' + w.dir) : ('wolf_walk_d' + w.dir);
+        const want = attackState
+          ? EndlessScene.WOLF_ATTACK_KEYS[w.dir]
+          : EndlessScene.WOLF_WALK_KEYS[w.dir];
         if (w.lastAnimKey !== want) {
-          // Fall back to walk anim if the attack anim doesn't exist (very rare — all
-          // 8 attack dirs are registered in create()). Checked once here, not per frame.
-          const finalKey = this.anims.exists(want) ? want : ('wolf_walk_d' + w.dir);
-          if (w.lastAnimKey !== finalKey && this.anims.exists(finalKey)) {
-            w.sprite.play(finalKey, true);
-            w.lastAnimKey = finalKey;
-          } else {
-            w.lastAnimKey = want;
-          }
+          // Fallback path extremely rare — attack anims always registered in create().
+          // We optimistically play `want`; Phaser throws if missing, but this is 8 dirs
+          // × 2 states = 16 pre-created in create(), so `want` is always valid.
+          w.sprite.play(want, true);
+          w.lastAnimKey = want;
         }
       }
 
-      // Bob (except windup where we scale)
+      // Bob (except windup where we scale). Only bob when in view — off-screen
+      // wolves don't need Math.sin per frame.
       if (w.state !== 'windup') {
-        w.bobPhase += dt * 4.5;
-        w.sprite.setPosition(w.lx, w.ly + Math.sin(w.bobPhase) * 2.5);
+        if (inViewHere) {
+          w.bobPhase += effDt * 4.5;
+          w.sprite.setPosition(w.lx, w.ly + Math.sin(w.bobPhase) * 2.5);
+        } else {
+          w.sprite.setPosition(w.lx, w.ly);
+        }
       } else {
         w.sprite.setPosition(w.lx, w.ly);
       }
 
       // Hit flash (overrides cached state tint)
       if (w.hitFlashMs > 0) {
-        w.hitFlashMs = Math.max(0, w.hitFlashMs - delta);
+        w.hitFlashMs = Math.max(0, w.hitFlashMs - effDelta);
         this.setWolfTint(w, w.hitFlashMs > 0 ? 0xff3333 : w.spec.furTint);
       }
 
@@ -1301,6 +1448,7 @@ export default class EndlessScene extends Phaser.Scene {
     if (this.playerDead || this.playerFlashMs > 60) return;
     this.playerHp = Math.max(0, this.playerHp - w.spec.biteDamage);
     this.playerFlashMs = 380;
+    this.playerSprite.setTint(0xff2222);
     const kdx = this.playerLX - w.lx; const kdy = this.playerLY - w.ly;
     const klen = Math.sqrt(kdx * kdx + kdy * kdy);
     if (klen > 0) {
@@ -1441,6 +1589,7 @@ export default class EndlessScene extends Phaser.Scene {
         const di = this.depthGroup.indexOf(w.sprite);
         if (di >= 0) this.depthGroup.splice(di, 1);
         w.sprite.destroy();
+        w.shadowImg.destroy();
       }
     }
     this.wolves = [];
