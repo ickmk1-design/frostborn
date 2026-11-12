@@ -23,10 +23,11 @@
     }
   ],
   "frozenSurvivors": [
-    { "iso": [8, 17] }, { "iso": [4, 22] }, { "iso": [12, 22] },
-    { "iso": [6, 25] }, { "iso": [10, 25] }, { "iso": [8, 27] },
-    { "iso": [5, 29] }, { "iso": [11, 29] }, { "iso": [7, 31] },
-    { "iso": [9, 31] }, { "iso": [8, 33] }, { "iso": [6, 35] }
+    { "iso": [6, 17] }, { "iso": [9, 18] }, { "iso": [8, 19] },
+    { "iso": [5, 21] }, { "iso": [11, 22] },
+    { "iso": [7, 23] }, { "iso": [4, 25] }, { "iso": [10, 25] },
+    { "iso": [6, 27] }, { "iso": [9, 28] },
+    { "iso": [8, 29] }, { "iso": [5, 30] }
   ],
   "survivorFollowRangePx": 82, "survivorThawRangePx": 105, "survivorThawTimeSec": 7,
   "workerChopIntervalMs": 6200, "workerWalkSpeed": 78,

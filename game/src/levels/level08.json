@@ -25,7 +25,7 @@
   "frozenSurvivors": [
     { "iso": [8, 20] }, { "iso": [4, 22] }, { "iso": [12, 22] },
     { "iso": [6, 26] }, { "iso": [10, 26] }, { "iso": [8, 29] },
-    { "iso": [5, 31] }
+    { "iso": [6, 21] }
   ],
   "survivorFollowRangePx": 88, "survivorThawRangePx": 115, "survivorThawTimeSec": 5,
   "workerChopIntervalMs": 5000, "workerWalkSpeed": 85,

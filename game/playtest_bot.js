@@ -18,7 +18,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // ── Constants ─────────────────────────────────────────────────────────────────
 const BASE_URL       = 'http://localhost:5177';
 const VIEWPORT       = { width: 393, height: 852 };
-const LEVEL_TIMEOUT  = 10 * 60 * 1000;   // 10 min per level
+// Per-level bot timeout = balance target max + 2 min (bot-only cap; real players have no timer).
+function levelTimeout(n) {
+  const b = BALANCE[n];
+  const minutes = (b ? b.max : 10) + 2;
+  return minutes * 60 * 1000;
+}
 const SCREENSHOT_INT = 5000;             // ms between screenshots
 const STALL_LIMIT    = 90 * 1000;        // 90s stall detection
 const STUCK_LIMIT    = 8 * 1000;         // 8s entity stuck detection
@@ -306,6 +311,14 @@ class Bot {
       return;
     }
 
+    // Never leave for a rescue trip with fuel below 50% — a trip can run 60-120s and
+    // some survivors are deep-south. Workers keep the fire alive while we're away,
+    // but only if fuel starts high enough to survive the round-trip.
+    if (state.fuel / this.fuelMax < 0.50) {
+      await this.fireCycle(state, 1500, 1500);
+      return;
+    }
+
     // Pick nearest frozen survivor from live state; fall back to static positions
     let target = null;
     const frozen = state.survivors.filter(s => s.state === 'frozen' || s.state === 'thawing');
@@ -384,6 +397,13 @@ class Bot {
     // Health retreat: if HP < 30%, retreat to fire first
     if (state.playerHp < state.playerHpMax * 0.3 && state.playerHpMax > 0) {
       await this.navigateTo(state, this.firePos.x, this.firePos.y + 60, 1500);
+      return;
+    }
+
+    // Never start a hunt with fuel below 35% — a hunt stage can run 60-120s and the fire
+    // will die if we commit now. Top up first.
+    if (state.fuel / this.fuelMax < 0.35) {
+      await this.fireCycle(state, 1500, 1500);
       return;
     }
 
@@ -499,7 +519,8 @@ class Bot {
   async run() {
     console.log(`  Level ${this.num}: starting loop`);
     const page  = this.page;
-    const tEnd  = this.t0 + LEVEL_TIMEOUT;
+    const toMs = levelTimeout(this.num);
+    const tEnd = this.t0 + toMs;
     let goChecks = 0;
 
     let nullStateMs = 0;    // track how long readState returns null
@@ -653,7 +674,7 @@ class Bot {
     }
 
     if (Date.now() >= tEnd && !this.won) {
-      this.issue('BLOCKER', `Level ${this.num} TIMED OUT (10 min). Reached stage ${this.lastStageIdx}.`);
+      this.issue('BLOCKER', `Level ${this.num} TIMED OUT (${(toMs/60000)|0} min). Reached stage ${this.lastStageIdx}.`);
     }
 
     return this.summary(await readState(page));
