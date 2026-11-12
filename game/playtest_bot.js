@@ -216,9 +216,9 @@ class Bot {
       await this.page.screenshot({ path: path.join(SCREENSHOTS_DIR, fname) });
       this.screenshots++;
     } catch {}
-    if (state?.fps) {
-      this.fpsSamples.push(state.fps);
-      if (state.fps < 25) this.issue('MINOR', `Low FPS: ${Math.round(state.fps)}`);
+    // FPS samples pushed in main loop; only log a low-FPS issue here (per screenshot cadence).
+    if (state?.fps && this.elapsed() >= 1 && state.fps < 25) {
+      this.issue('MINOR', `Low FPS: ${Math.round(state.fps)}`);
     }
   }
 
@@ -523,6 +523,11 @@ class Bot {
       // Expose fuelMax from cfg if available, otherwise use our constructor value
       if (state.fuelMax && state.fuelMax > 0) this.fuelMax = state.fuelMax;
 
+      // FPS sampling every readState tick (ignoring first 1s for load spike).
+      if (state?.fps && this.elapsed() >= 1) {
+        this.fpsSamples.push(state.fps);
+      }
+
       await this.screenshot(state);
 
       // ── Win / Lose detection ───────────────────────────────────────────
@@ -805,8 +810,34 @@ function buildReport(results, cfgs) {
   L.push(`\nGenerated: ${ts}  |  Platform: WebKit headless (Playwright)  |  Viewport: 393×852`);
   L.push(`\n---\n`);
 
-  // Summary table
-  L.push(`## Summary Table\n`);
+  // Primary summary table (per task spec: Level | Completed | Time | Deaths | FPS min | FPS avg)
+  // FPS min/avg exclude the first 1s of each level (load spike).
+  L.push(`## Summary (15-level playtest)\n`);
+  L.push(`| Level | Completed | Time (actual vs target) | Deaths | FPS min (post-1s) | FPS avg |`);
+  L.push(`|-------|-----------|-------------------------|--------|-------------------|---------|`);
+
+  for (const r of results) {
+    const bt   = BALANCE[r.levelNum];
+    const mins = (r.elapsed / 60).toFixed(1);
+    const tgt  = bt ? `${bt.min}–${bt.max} min` : 'TBD';
+    const yn   = r.won ? 'Y' : 'N';
+    let timeStr;
+    if (bt && r.won) {
+      const m = r.elapsed / 60;
+      let vs = 'on target';
+      if (m < bt.min)      vs = `${((bt.min - m)*60).toFixed(0)}s fast`;
+      else if (m > bt.max) vs = `${((m - bt.max)*60).toFixed(0)}s slow`;
+      timeStr = `${mins} min (target ${tgt} — ${vs})`;
+    } else {
+      timeStr = `${mins} min (target ${tgt})`;
+    }
+    L.push(`| L${r.levelNum} | ${yn} | ${timeStr} | ${r.deaths} | ${r.fpsMin} | ${r.fpsAvg} |`);
+  }
+
+  L.push(`\n---\n`);
+
+  // Legacy extended table
+  L.push(`## Extended Summary\n`);
   L.push(`| # | Name | Time | Target | vs Target | Deaths | Issues | FPS avg | FPS min |`);
   L.push(`|---|------|------|--------|-----------|--------|--------|---------|---------|`);
 

@@ -1335,12 +1335,18 @@ export default class GameScene extends Phaser.Scene {
       const pdx = this.playerLX - this.padX; const pdy = this.playerLY - this.padY;
       const inPadRange = pdx*pdx + pdy*pdy < padCfg.standRangePx ** 2;
       if (inPadRange && this.coins > 0) {
-        const pay = Math.min(this.coins, padCfg.payRateCoinsPerSec * dt);
+        // Pay-in deposits full cost in ~2.5s regardless of per-level config so the
+        // build never feels like dwelling. Progress persists via coinsPaidForTent even
+        // if the player leaves and returns (never reset mid-level).
+        const scaledRate = Math.max(padCfg.payRateCoinsPerSec ?? 0, padCfg.costCoins / 2.5);
+        const pay = Math.min(this.coins, scaledRate * dt);
         this.coins -= pay; this.coinsPaidForTent += pay;
         this.updatePadSign();
         if (this.coinsPaidForTent >= padCfg.costCoins) this.buildTent();
       } else if (inPadRange && this.coins === 0) {
         onPadWithNoCoins = true;
+        // Re-render sign so returning players see current remaining + progress bar immediately.
+        this.updatePadSign();
       }
     }
 
