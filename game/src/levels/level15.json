@@ -23,10 +23,10 @@
     }
   ],
   "frozenSurvivors": [
-    { "iso": [8, 20] }, { "iso": [4, 23] }, { "iso": [12, 23] },
-    { "iso": [6, 27] }, { "iso": [10, 27] }, { "iso": [8, 31] },
-    { "iso": [5, 34] }, { "iso": [11, 34] }, { "iso": [7, 37] },
-    { "iso": [9, 37] }, { "iso": [8, 40] }, { "iso": [5, 42] }
+    { "iso": [8, 17] }, { "iso": [4, 22] }, { "iso": [12, 22] },
+    { "iso": [6, 25] }, { "iso": [10, 25] }, { "iso": [8, 27] },
+    { "iso": [5, 29] }, { "iso": [11, 29] }, { "iso": [7, 31] },
+    { "iso": [9, 31] }, { "iso": [8, 33] }, { "iso": [6, 35] }
   ],
   "survivorFollowRangePx": 82, "survivorThawRangePx": 105, "survivorThawTimeSec": 7,
   "workerChopIntervalMs": 6200, "workerWalkSpeed": 78,
@@ -47,17 +47,15 @@
   ],
   "hintDurationSec": 14,
   "animals": [
-    { "iso": [8, 20], "type": "grandalpha", "roamCenter": [8, 21], "roamRadius": 2.5 },
+    { "iso": [8, 28], "type": "grandalpha", "roamCenter": [8, 28], "roamRadius": 2.5 },
     { "iso": [5, 15], "type": "wolf", "roamCenter": [5, 16], "roamRadius": 2.5 },
     { "iso": [11, 15], "type": "wolf", "roamCenter": [11, 16], "roamRadius": 2.5 },
-    { "iso": [5, 23], "type": "wolf", "roamCenter": [5, 24], "roamRadius": 2.0 },
-    { "iso": [11, 23], "type": "wolf", "roamCenter": [11, 24], "roamRadius": 2.0 },
-    { "iso": [7, 29], "type": "wolf", "roamCenter": [7, 30], "roamRadius": 2.0 },
-    { "iso": [9, 29], "type": "wolf", "roamCenter": [9, 30], "roamRadius": 2.0 },
-    { "iso": [5, 34], "type": "wolf", "roamCenter": [5, 35], "roamRadius": 1.5 },
-    { "iso": [11, 34], "type": "wolf", "roamCenter": [11, 35], "roamRadius": 1.5 },
-    { "iso": [7, 38], "type": "wolf", "roamCenter": [7, 39], "roamRadius": 1.5 },
-    { "iso": [9, 38], "type": "wolf", "roamCenter": [9, 39], "roamRadius": 1.5 }
+    { "iso": [5, 21], "type": "wolf", "roamCenter": [5, 22], "roamRadius": 2.0 },
+    { "iso": [11, 21], "type": "wolf", "roamCenter": [11, 22], "roamRadius": 2.0 },
+    { "iso": [7, 26], "type": "wolf", "roamCenter": [7, 27], "roamRadius": 2.0 },
+    { "iso": [9, 26], "type": "wolf", "roamCenter": [9, 27], "roamRadius": 2.0 },
+    { "iso": [5, 30], "type": "wolf", "roamCenter": [5, 31], "roamRadius": 1.5 },
+    { "iso": [11, 30], "type": "wolf", "roamCenter": [11, 31], "roamRadius": 1.5 }
   ],
   "animalConfig": {
     "wolf": {

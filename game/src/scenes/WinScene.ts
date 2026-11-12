@@ -130,13 +130,27 @@ export default class WinScene extends Phaser.Scene {
         this.time.delayedCall(230, () => this.scene.start('LevelSelectScene'));
       });
     } else {
-      // Last level — only menu
-      const { bg: menuBg, label: menuLabel, zone: menuZone } = makeButton(this, CX, btnStartY + btnGap, t('menu'), {
-        w: btnW, h: btnH, fontSize: '22px', depth: 10,
+      // Last level (L15 beaten) — show chapter teaser CTA + menu
+      const { bg: teaserBg, label: teaserLabel, zone: teaserZone } = makeButton(this, CX, btnStartY + btnGap, t('comingSoonCta'), {
+        w: btnW, h: btnH, fontSize: '20px', depth: 10,
+        bgColor: 0x224477, borderColor: 0x55aaff,
+      });
+      teaserBg.setAlpha(0); teaserLabel.setAlpha(0);
+      this.tweens.add({ targets: [teaserBg, teaserLabel], alpha: 1, duration: 380, delay: 650 });
+      this.time.delayedCall(1050, () => {
+        this.tweens.add({ targets: [teaserBg, teaserLabel], scaleX: 1.03, scaleY: 1.03, duration: 700, yoyo: true, repeat: -1, ease: 'Sine.InOut' });
+      });
+      teaserZone.on('pointerup', () => {
+        this.cameras.main.fadeOut(300, 0, 0, 0);
+        this.time.delayedCall(310, () => this.scene.start('ChapterTeaserScene', { returnTo: 'LevelSelectScene' }));
+      });
+
+      const { bg: menuBg, label: menuLabel, zone: menuZone } = makeButton(this, CX, btnStartY + btnGap * 2, t('menu'), {
+        w: btnW * 0.65, h: btnH * 0.8, fontSize: '18px', depth: 10,
         bgColor: 0x112244, borderColor: 0x2255aa,
       });
       menuBg.setAlpha(0); menuLabel.setAlpha(0);
-      this.tweens.add({ targets: [menuBg, menuLabel], alpha: 1, duration: 350, delay: 650 });
+      this.tweens.add({ targets: [menuBg, menuLabel], alpha: 1, duration: 350, delay: 800 });
       menuZone.on('pointerup', () => {
         this.cameras.main.fadeOut(220, 0, 0, 0);
         this.time.delayedCall(230, () => this.scene.start('LevelSelectScene'));

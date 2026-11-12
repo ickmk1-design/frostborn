@@ -1,6 +1,6 @@
 # Frostborn Pre-flight QA
 
-Generated: 2026-11-12 04:58:52
+Generated: 2026-11-12 08:54:31
 
 **Summary: 67 PASS | 0 FAIL | 3 WARN | 8 MANUAL (needs device)**
 
@@ -17,12 +17,12 @@ Generated: 2026-11-12 04:58:52
 | PASS | Sprite atlases present | — |
 | PASS | index.html has no absolute /assets/ paths (Vite base is ./ | — |
 | PASS | No Google Fonts external request in index.html | — |
-| PASS | JS bundle size 1.81MB (< 3MB) | — |
-| PASS | [WebKit] First frame under 3s | 257ms |
+| PASS | JS bundle size 1.85MB (< 3MB) | — |
+| PASS | [WebKit] First frame under 3s | 325ms |
 | PASS | [WebKit] Canvas rendered content | ~4KB dataURL |
 | PASS | [WebKit] No JS errors on startup | — |
 | PASS | [WebKit] No asset 404s | — |
-| PASS | [Chromium] First frame under 3s | 1465ms |
+| PASS | [Chromium] First frame under 3s | 360ms |
 | PASS | [Chromium] Canvas rendered content | ~13KB dataURL |
 | PASS | [Chromium] No JS errors on startup | — |
 | PASS | [Chromium] No asset 404s | — |
@@ -80,8 +80,8 @@ Generated: 2026-11-12 04:58:52
 | PASS | [WebKit] wolf dir Right+Up: d3 ✓ | — |
 | WARN | [WebKit] No deer animal in level04 — skipping | — |
 | PASS | [WebKit] Worker delivery level01 (3 workers): 39 deliveries ✓ | — |
-| PASS | [WebKit] Worker delivery level08 (7 workers): 76 deliveries ✓ | — |
-| PASS | [WebKit] Worker delivery level15 (12 workers): 130 deliveries ✓ | — |
+| PASS | [WebKit] Worker delivery level08 (7 workers): 91 deliveries ✓ | — |
+| PASS | [WebKit] Worker delivery level15 (12 workers): 136 deliveries ✓ | — |
 | WARN | HUD top bar starts at y=50 (SAF=50) — verify no clipping behind status bar on iPhone 14+ (status bar is 54px; contentInset:always should offset this) | — |
 | WARN | Shop/coin buttons at y=802 — verify not clipped by home indicator bar on devices with gesture nav (last 34px = y>810) | — |
 | MANUAL | Safe areas — test on physical iPhone 14 Pro and iPhone SE (different notch/bar heights) | — |

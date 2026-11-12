@@ -1,0 +1,9 @@
+{
+  "waves_survived": 5,
+  "total_seconds": 510.5,
+  "min_fps": 9,
+  "avg_fps": 33,
+  "deaths": 1,
+  "passed": true,
+  "console_errors": []
+}

@@ -28,8 +28,16 @@ const JOY_X     = 196;
 const JOY_Y     = 700;
 const JOY_DRAG  = 55;   // px drag radius (60px max per spec)
 
-// Fire priority threshold — if fuel < this fraction of fuelMax, drop everything and feed fire
-const FIRE_PRIORITY_PCT = 0.40;   // 40% of fuelMax
+// Fire hysteresis:
+//   - CRITICAL: fuel below this triggers refill-until-safe, interrupting any task.
+//   - SAFE: refill loop runs cycles until fuel reaches SAFE (so one critical
+//     event doesn't require another in 5s).
+//   - TOPUP: between stages (when currentStageIdx advances) refuel if below.
+// Once committed to a stage, bot stays on it unless fuel falls below CRITICAL —
+// prevents the old oscillation of "interrupt at 40%, top up at 60%, interrupt again".
+const FIRE_CRITICAL_PCT = 0.35;
+const FIRE_SAFE_PCT     = 0.70;
+const FIRE_TOPUP_PCT    = 0.55;
 
 // isoToScreen helper (mirrors isoUtils.ts)
 // tileW=80, tileH=40
@@ -181,6 +189,9 @@ class Bot {
 
     // Worker stuck map
     this.workerPrev    = new Map();
+
+    // Hysteresis: track whether we need to top up fuel between stages
+    this.needsTopUp = false;
 
     // Result
     this.won           = false;
@@ -405,12 +416,7 @@ class Bot {
       await walkTo(this.page, state, target.x, target.y, 500);
       await this.page.waitForTimeout(150);
     }
-
-    // After hunting also check fire
-    const st2 = await readState(this.page) || state;
-    if (st2.fuel < this.fuelMax * 0.35 && this.treePoses.length > 0) {
-      await this.fireCycle(st2, 1200, 1200);
-    }
+    // Fire tending is handled by the main-loop hysteresis — no in-task interrupt.
   }
 
   async doCollectLogs(stage, state) {
@@ -561,6 +567,8 @@ class Bot {
         this.goalStalledMs = Date.now();
         // Reset nav tracking on stage change
         this.navPrevX = -9999; this.navPrevY = -9999;
+        // Mark as a "stage boundary" — allow one opportunistic fuel top-up before pursuing the new goal.
+        this.needsTopUp = true;
       }
 
       // ── Goal stall check with diagnostic logging ──────────────────────
@@ -580,12 +588,32 @@ class Bot {
       // ── Entity QA ──────────────────────────────────────────────────────
       this.checkEntities(state);
 
-      // ── Action decision ────────────────────────────────────────────────
-      // Priority 1 — FIRE TENDING: fuel < 40% of fuelMax → drop everything, feed fire.
-      // fuelDrainPerSec ~5.5 on later levels; at 40% with 100 fuelMax = 40 fuel → ~7s before empty.
+      // ── Nav-stall watchdog ────────────────────────────────────────────
+      // If the player hasn't drifted more than 80px (Euclidean) from its
+      // anchor in 12s, treat as stalled: the bot is probably oscillating
+      // against a wall or circling a wolf, and needs a fire-waypoint reset
+      // to escape. Measuring drift (not instantaneous movement) ignores
+      // local wiggle. 80px is roughly one tile away.
+      {
+        const px = state.playerLX, py = state.playerLY;
+        const drift = Math.hypot(px - this.lastMoveX, py - this.lastMoveY);
+        if (drift > 80) {
+          this.lastMoveX = px; this.lastMoveY = py; this.lastMoveMs = Date.now();
+        } else if (Date.now() - this.lastMoveMs > 12000) {
+          this.issue('MINOR', `Nav-stall 12s at (${px.toFixed(0)},${py.toFixed(0)}) — fire-waypoint reset`);
+          await this.fireCycle(state, 1000, 1000);
+          this.lastMoveX = px; this.lastMoveY = py; this.lastMoveMs = Date.now();
+          this.navPrevX = -9999; this.navPrevY = -9999;
+          continue;
+        }
+      }
+
+      // ── Action decision (with hysteresis) ──────────────────────────────
+      // Only CRITICAL fuel interrupts the current task. Below the critical threshold
+      // the fire is <~4s from going out on late levels, so we must break off.
+      // Between stages (needsTopUp), we may do one fire cycle before pursuing the new goal.
       const fuelPct      = state.fuel / this.fuelMax;
-      const fuelLow      = fuelPct < FIRE_PRIORITY_PCT;
-      const fuelCritical = fuelPct < 0.15;
+      const fuelCritical = fuelPct < FIRE_CRITICAL_PCT;
       const stagesDone   = state.currentStageIdx >= state.goalStages.length;
 
       if (stagesDone) {
@@ -597,26 +625,23 @@ class Bot {
       const curStage = state.goalStages[state.currentStageIdx];
 
       if (fuelCritical) {
-        // Emergency: drop everything, rush to nearest tree then fire
-        await this.fireCycle(state, 700, 1000);
-      } else if (fuelLow) {
-        // Fire priority: collect log and deliver before anything else
-        await this.fireCycle(state, 1300, 1300);
-      } else {
-        // Pursue current goal
-        await this.doStage(curStage, state);
-
-        // After goal action, opportunistically top up fuel if below 60%
-        // Skip during buildStructure — we don't want to drag the bot off the payment pad.
-        if (curStage.type !== 'buildStructure') {
-          const st2 = await readState(page) || state;
-          if (st2 && !st2.gameOver && !st2.playerDead) {
-            const st2FuelPct = st2.fuel / this.fuelMax;
-            if (st2FuelPct < 0.60 && this.treePoses.length > 0) {
-              await this.fireCycle(st2, 1000, 1000);
-            }
-          }
+        // Emergency: refill until SAFE so we don't cycle back here immediately.
+        // Loop up to 3 cycles (cap avoids infinite loops when trees are on long cooldown).
+        for (let cyc = 0; cyc < 3; cyc++) {
+          await this.fireCycle(state, 700, 1000);
+          const stCheck = await readState(this.page) || state;
+          if (stCheck.playerDead || stCheck.gameOver) break;
+          if ((stCheck.fuel / this.fuelMax) >= FIRE_SAFE_PCT) break;
         }
+        this.needsTopUp = false;  // emergency counts as the top-up
+      } else if (this.needsTopUp && fuelPct < FIRE_TOPUP_PCT && curStage.type !== 'buildStructure') {
+        // Stage boundary opportunity: one fire cycle before committing to the next task.
+        await this.fireCycle(state, 1200, 1200);
+        this.needsTopUp = false;
+      } else {
+        // Committed to current stage — stay on it.
+        this.needsTopUp = false;
+        await this.doStage(curStage, state);
       }
 
       await page.waitForTimeout(50);
@@ -673,7 +698,14 @@ async function main() {
   const browser = await webkit.launch({ headless: true });
   const results  = [];
 
-  for (let n = 1; n <= 15; n++) {
+  // Optional LEVELS env var — comma-separated list (e.g. "6" or "12,13,14,15").
+  // Omit to run all 15.
+  const levelsEnv = (process.env.LEVELS || '').trim();
+  const levelNums = levelsEnv
+    ? levelsEnv.split(',').map(s => parseInt(s.trim(), 10)).filter(n => n >= 1 && n <= 15)
+    : Array.from({ length: 15 }, (_, i) => i + 1);
+
+  for (const n of levelNums) {
     console.log(`\n=== Level ${n} ===`);
     const cfg = cfgs[n - 1];
 

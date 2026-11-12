@@ -23,10 +23,10 @@
     }
   ],
   "frozenSurvivors": [
-    { "iso": [8, 20] }, { "iso": [4, 23] }, { "iso": [12, 23] },
-    { "iso": [6, 27] }, { "iso": [10, 27] }, { "iso": [8, 31] },
-    { "iso": [5, 34] }, { "iso": [11, 34] }, { "iso": [8, 37] },
-    { "iso": [5, 39] }
+    { "iso": [8, 20] }, { "iso": [4, 22] }, { "iso": [12, 22] },
+    { "iso": [6, 25] }, { "iso": [10, 25] }, { "iso": [8, 28] },
+    { "iso": [5, 30] }, { "iso": [11, 30] }, { "iso": [8, 32] },
+    { "iso": [6, 34] }
   ],
   "survivorFollowRangePx": 84, "survivorThawRangePx": 108, "survivorThawTimeSec": 6.5,
   "workerChopIntervalMs": 5800, "workerWalkSpeed": 81,
@@ -50,13 +50,13 @@
     { "iso": [5, 15], "type": "wolf", "roamCenter": [5, 16], "roamRadius": 2.5 },
     { "iso": [11, 15], "type": "wolf", "roamCenter": [11, 16], "roamRadius": 2.5 },
     { "iso": [8, 18], "type": "wolf", "roamCenter": [8, 19], "roamRadius": 2.0 },
-    { "iso": [5, 23], "type": "wolf", "roamCenter": [5, 24], "roamRadius": 2.0 },
-    { "iso": [11, 23], "type": "wolf", "roamCenter": [11, 24], "roamRadius": 2.0 },
-    { "iso": [8, 27], "type": "wolf", "roamCenter": [8, 28], "roamRadius": 2.0 },
-    { "iso": [5, 31], "type": "wolf", "roamCenter": [5, 32], "roamRadius": 2.0 },
-    { "iso": [11, 31], "type": "wolf", "roamCenter": [11, 32], "roamRadius": 2.0 },
-    { "iso": [7, 35], "type": "wolf", "roamCenter": [7, 36], "roamRadius": 1.5 },
-    { "iso": [9, 35], "type": "wolf", "roamCenter": [9, 36], "roamRadius": 1.5 }
+    { "iso": [5, 21], "type": "wolf", "roamCenter": [5, 22], "roamRadius": 2.0 },
+    { "iso": [11, 21], "type": "wolf", "roamCenter": [11, 22], "roamRadius": 2.0 },
+    { "iso": [8, 26], "type": "wolf", "roamCenter": [8, 27], "roamRadius": 2.0 },
+    { "iso": [5, 29], "type": "wolf", "roamCenter": [5, 30], "roamRadius": 2.0 },
+    { "iso": [11, 29], "type": "wolf", "roamCenter": [11, 30], "roamRadius": 2.0 },
+    { "iso": [7, 32], "type": "wolf", "roamCenter": [7, 33], "roamRadius": 1.5 },
+    { "iso": [9, 32], "type": "wolf", "roamCenter": [9, 33], "roamRadius": 1.5 }
   ],
   "animalConfig": {
     "wolf": {

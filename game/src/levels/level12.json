@@ -24,8 +24,8 @@
   ],
   "frozenSurvivors": [
     { "iso": [8, 20] }, { "iso": [4, 23] }, { "iso": [12, 23] },
-    { "iso": [6, 27] }, { "iso": [10, 27] }, { "iso": [8, 31] },
-    { "iso": [5, 34] }, { "iso": [11, 34] }, { "iso": [8, 36] }
+    { "iso": [6, 26] }, { "iso": [10, 26] }, { "iso": [8, 28] },
+    { "iso": [5, 30] }, { "iso": [11, 30] }, { "iso": [8, 32] }
   ],
   "survivorFollowRangePx": 85, "survivorThawRangePx": 110, "survivorThawTimeSec": 6,
   "workerChopIntervalMs": 5500, "workerWalkSpeed": 82,
@@ -48,13 +48,13 @@
   "animals": [
     { "iso": [5, 15], "type": "wolf", "roamCenter": [5, 16], "roamRadius": 2.5 },
     { "iso": [11, 15], "type": "wolf", "roamCenter": [11, 16], "roamRadius": 2.5 },
-    { "iso": [7, 20], "type": "wolf", "roamCenter": [7, 21], "roamRadius": 2.0 },
-    { "iso": [9, 20], "type": "wolf", "roamCenter": [9, 21], "roamRadius": 2.0 },
-    { "iso": [5, 25], "type": "wolf", "roamCenter": [5, 26], "roamRadius": 2.0 },
-    { "iso": [11, 25], "type": "wolf", "roamCenter": [11, 26], "roamRadius": 2.0 },
-    { "iso": [8, 30], "type": "wolf", "roamCenter": [8, 31], "roamRadius": 1.5 },
-    { "iso": [6, 33], "type": "wolf", "roamCenter": [6, 34], "roamRadius": 1.5 },
-    { "iso": [10, 33], "type": "wolf", "roamCenter": [10, 34], "roamRadius": 1.5 }
+    { "iso": [7, 19], "type": "wolf", "roamCenter": [7, 20], "roamRadius": 2.0 },
+    { "iso": [9, 19], "type": "wolf", "roamCenter": [9, 20], "roamRadius": 2.0 },
+    { "iso": [5, 24], "type": "wolf", "roamCenter": [5, 25], "roamRadius": 2.0 },
+    { "iso": [11, 24], "type": "wolf", "roamCenter": [11, 25], "roamRadius": 2.0 },
+    { "iso": [8, 27], "type": "wolf", "roamCenter": [8, 28], "roamRadius": 1.5 },
+    { "iso": [6, 31], "type": "wolf", "roamCenter": [6, 32], "roamRadius": 1.5 },
+    { "iso": [10, 31], "type": "wolf", "roamCenter": [10, 32], "roamRadius": 1.5 }
   ],
   "animalConfig": {
     "wolf": {

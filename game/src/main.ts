@@ -8,7 +8,9 @@ import UIScene from './scenes/UIScene';
 import WinScene from './scenes/WinScene';
 import LoseScene from './scenes/LoseScene';
 import ShopScene from './scenes/ShopScene';
-import { loadProgress } from './progress';
+import EndlessScene from './scenes/EndlessScene';
+import ChapterTeaserScene from './scenes/ChapterTeaserScene';
+import { loadProgress, loadNotifyOptIn, loadEndlessBest } from './progress';
 import { loadEconomy } from './services/economy';
 import { initAppLifecycle } from './services/appLifecycle';
 import { initAds } from './services/ads';
@@ -108,6 +110,8 @@ async function boot(): Promise<void> {
   // These use Capacitor Preferences (native) or localStorage (web) and have no network calls.
   await loadProgress().catch(e => console.warn('[boot] loadProgress:', e));
   await loadEconomy().catch(e => console.warn('[boot] loadEconomy:', e));
+  await loadNotifyOptIn().catch(e => console.warn('[boot] loadNotifyOptIn:', e));
+  await loadEndlessBest().catch(e => console.warn('[boot] loadEndlessBest:', e));
 
   // Ensure GameFont is loaded before creating any Phaser text
   try { await document.fonts.load('400 24px GameFont'); } catch { /* ok */ }
@@ -136,7 +140,7 @@ async function boot(): Promise<void> {
       width: '100%',
       height: '100%',
     },
-    scene: [BootScene, MainMenuScene, SettingsScene, LevelSelectScene, GameScene, UIScene, WinScene, LoseScene, ShopScene],
+    scene: [BootScene, MainMenuScene, SettingsScene, LevelSelectScene, GameScene, UIScene, WinScene, LoseScene, ShopScene, EndlessScene, ChapterTeaserScene],
   });
 
   (window as any).__game = __phaserGame;

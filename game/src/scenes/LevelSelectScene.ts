@@ -1,8 +1,8 @@
 import Phaser from 'phaser';
-import { isUnlocked, isCompleted, levelNumToKey } from '../progress';
+import { isUnlocked, isCompleted, levelNumToKey, isEndlessUnlocked, getEndlessBest } from '../progress';
 import { getCoins } from '../services/economy';
 import { FF, Colors, drawKeyArtBg, makeBackButton, makeScreenTitle, makeWoodButton } from '../ui/theme';
-import { t } from '../i18n';
+import { t, tFmt } from '../i18n';
 
 const LEVELS = [
   { num: 1,  name: 'The Frozen Camp',     subtitle: 'Rescue survivors & build camp'          },
@@ -79,7 +79,15 @@ export default class LevelSelectScene extends Phaser.Scene {
       curY += cardH + gap;
     }
 
-    const totalH    = LEVELS.length * (cardH + gap) - gap;
+    // ── Endless Winter card ───────────────────────────────────────────────
+    this.drawEndlessCard(this.scrollCont, CX, curY + cardH / 2, cardW, cardH);
+    curY += cardH + gap;
+
+    // ── Coming soon locked node ───────────────────────────────────────────
+    this.drawComingSoonCard(this.scrollCont, CX, curY + cardH / 2, cardW, cardH);
+    curY += cardH + gap;
+
+    const totalH    = (LEVELS.length + 2) * (cardH + gap) - gap;
     const bottomH   = 54;
     this.minScrollY = startY + Math.min(0, H - startY - totalH - bottomH);
 
@@ -231,6 +239,123 @@ export default class LevelSelectScene extends Phaser.Scene {
         this.time.delayedCall(230, () => {
           this.scene.start('GameScene', { levelKey: levelNumToKey(num), levelNum: num });
         });
+      }
+    });
+  }
+
+  private drawEndlessCard(
+    cont: Phaser.GameObjects.Container,
+    cx: number, cy: number, w: number, h: number,
+  ): void {
+    const unlocked = isEndlessUnlocked();
+    const x = cx - w / 2;
+    const y = cy - h / 2;
+    const r = 10;
+    const bgCol  = unlocked ? 0x1a3a44 : 0x14141c;
+    const borCol = unlocked ? 0x55bbcc : 0x2a2a3a;
+
+    const card = this.add.graphics();
+    card.fillStyle(bgCol, 0.92).fillRoundedRect(x, y, w, h, r);
+    card.lineStyle(1.5, borCol, 1).strokeRoundedRect(x, y, w, h, r);
+    cont.add(card);
+
+    const badgeW = Math.round(h * 0.68);
+    card.fillStyle(unlocked ? 0x2a5a66 : 0x18182a, 1);
+    card.fillRoundedRect(x + 10, cy - badgeW / 2, badgeW, badgeW, 7);
+
+    const emoji = this.add.text(x + 10 + badgeW / 2, cy, '\u2744', {
+      fontFamily: FF, fontSize: `${Math.round(badgeW * 0.52)}px`, fontStyle: 'bold',
+      color: unlocked ? '#aaeeff' : '#3a3a55',
+    }).setOrigin(0.5);
+
+    const textX = x + 10 + badgeW + 10;
+    const nameTxt = this.add.text(textX, cy - h * 0.14, t('endlessTitle'), {
+      fontFamily: FF, fontSize: `${Math.round(h * 0.24)}px`, fontStyle: 'bold',
+      color: unlocked ? '#d8f4ff' : '#3a3a55',
+    }).setOrigin(0, 0.5);
+
+    let subText = t('endlessUnlockHint');
+    if (unlocked) {
+      const best = getEndlessBest();
+      if (best.wave > 0) {
+        const bm = Math.floor(best.seconds / 60);
+        const bs2 = Math.floor(best.seconds % 60);
+        subText = tFmt('endlessBest', { wave: best.wave, time: `${String(bm).padStart(2,'0')}:${String(bs2).padStart(2,'0')}` });
+      } else {
+        subText = t('comingSoonCta');
+      }
+    }
+    const subTxt = this.add.text(textX, cy + h * 0.18, subText, {
+      fontFamily: FF, fontSize: `${Math.round(h * 0.17)}px`,
+      color: unlocked ? '#88ccee' : '#2a2a44',
+    }).setOrigin(0, 0.5);
+
+    cont.add([emoji, nameTxt, subTxt]);
+
+    if (!unlocked) {
+      const lock = this.add.text(x + w - 12, cy, '\uD83D\uDD12', {
+        fontSize: `${Math.round(h * 0.28)}px`,
+      }).setOrigin(1, 0.5);
+      cont.add(lock);
+      return;
+    }
+
+    const hit = this.add.rectangle(cx, cy, w, h, 0xffffff, 0)
+      .setInteractive({ useHandCursor: true });
+    cont.add(hit);
+    let tapPtrY = 0;
+    hit.on('pointerdown', (ptr: Phaser.Input.Pointer) => { tapPtrY = ptr.y; });
+    hit.on('pointerup', (ptr: Phaser.Input.Pointer) => {
+      const traveled = Math.abs(ptr.y - tapPtrY);
+      const listMoved = Math.abs(this.scrollCont.y - this.contStartY);
+      if (traveled < 10 && listMoved < 8) {
+        this.cameras.main.fadeOut(220, 0, 0, 0);
+        this.time.delayedCall(230, () => this.scene.start('EndlessScene'));
+      }
+    });
+  }
+
+  private drawComingSoonCard(
+    cont: Phaser.GameObjects.Container,
+    cx: number, cy: number, w: number, h: number,
+  ): void {
+    const x = cx - w / 2;
+    const y = cy - h / 2;
+    const r = 10;
+
+    const card = this.add.graphics();
+    card.fillStyle(0x141a2a, 0.90).fillRoundedRect(x, y, w, h, r);
+    card.lineStyle(1.5, 0x3a4a66, 1).strokeRoundedRect(x, y, w, h, r);
+    cont.add(card);
+
+    const badgeW = Math.round(h * 0.68);
+    card.fillStyle(0x1a2238, 1);
+    card.fillRoundedRect(x + 10, cy - badgeW / 2, badgeW, badgeW, 7);
+
+    const lockBig = this.add.text(x + 10 + badgeW / 2, cy, '\uD83D\uDD12', {
+      fontFamily: FF, fontSize: `${Math.round(badgeW * 0.48)}px`, color: '#aabbcc',
+    }).setOrigin(0.5);
+
+    const textX = x + 10 + badgeW + 10;
+    const nameTxt = this.add.text(textX, cy - h * 0.14, t('comingSoonTitle'), {
+      fontFamily: FF, fontSize: `${Math.round(h * 0.22)}px`, fontStyle: 'bold',
+      color: '#aaccff',
+    }).setOrigin(0, 0.5);
+    const subTxt = this.add.text(textX, cy + h * 0.18, t('comingSoonBody'), {
+      fontFamily: FF, fontSize: `${Math.round(h * 0.16)}px`, color: '#7799bb',
+    }).setOrigin(0, 0.5);
+    cont.add([lockBig, nameTxt, subTxt]);
+
+    const hit = this.add.rectangle(cx, cy, w, h, 0xffffff, 0).setInteractive({ useHandCursor: true });
+    cont.add(hit);
+    let tapPtrY = 0;
+    hit.on('pointerdown', (ptr: Phaser.Input.Pointer) => { tapPtrY = ptr.y; });
+    hit.on('pointerup', (ptr: Phaser.Input.Pointer) => {
+      const traveled = Math.abs(ptr.y - tapPtrY);
+      const listMoved = Math.abs(this.scrollCont.y - this.contStartY);
+      if (traveled < 10 && listMoved < 8) {
+        this.cameras.main.fadeOut(200, 0, 0, 0);
+        this.time.delayedCall(210, () => this.scene.start('ChapterTeaserScene', { returnTo: 'LevelSelectScene' }));
       }
     });
   }

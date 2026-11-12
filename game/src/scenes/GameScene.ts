@@ -164,6 +164,13 @@ export default class GameScene extends Phaser.Scene {
   private lastFootprintTime = 0;
   private fireGlowImg!: Phaser.GameObjects.Image;
 
+  // Pooled single-shot emitters (woodchip / ice shatter / slash) — constructed
+  // once in create() and re-triggered via explodeAt(). Avoids allocating a new
+  // ParticleEmitter GameObject on every hit (major GC pressure on L12-L15).
+  private woodchipEmitter!: Phaser.GameObjects.Particles.ParticleEmitter;
+  private iceShatterEmitter!: Phaser.GameObjects.Particles.ParticleEmitter;
+  private slashEmitter!: Phaser.GameObjects.Particles.ParticleEmitter;
+
   private depthGroup: Array<Phaser.GameObjects.Image | Phaser.GameObjects.Sprite> = [];
   private obstacles: Array<{ x: number; y: number; r: number }> = [];
 
@@ -653,6 +660,23 @@ export default class GameScene extends Phaser.Scene {
       emitting: false,
     }).setDepth(-1);
 
+    // Pooled single-shot emitters — one instance each, re-aimed per hit.
+    this.woodchipEmitter = this.add.particles(0, 0, 'woodchip', {
+      speed: { min: 55, max: 140 }, angle: { min: 190, max: 350 },
+      scale: { start: 1.1, end: 0.1 }, alpha: { start: 1, end: 0 },
+      lifespan: 520, emitting: false,
+    }).setDepth(2100);
+    this.iceShatterEmitter = this.add.particles(0, 0, 'effect_ice_freeze_shatter', {
+      speed: { min: 70, max: 190 }, angle: { min: 0, max: 360 },
+      scale: { start: 0.14, end: 0 }, alpha: { start: 1, end: 0 },
+      lifespan: 600, emitting: false,
+    }).setDepth(2100);
+    this.slashEmitter = this.add.particles(0, 0, 'slashmark', {
+      speed: { min: 20, max: 60 }, angle: { min: 220, max: 320 },
+      scale: { start: 0.9, end: 0.4 }, alpha: { start: 1, end: 0 },
+      lifespan: 280, emitting: false,
+    }).setDepth(2100);
+
     // ── Frozen survivors ──────────────────────────────────────────────────
     // Ice block dimensions proportional to CHAR_SIZE
     const IW = 56; const IH = 72; const IXO = 28; const IYO = 76;
@@ -919,10 +943,52 @@ export default class GameScene extends Phaser.Scene {
       }
     }
 
+    // Warmup pass — forces GPU shader compile + texture upload for resources
+    // the player will hit in the first few seconds. Without this, the first
+    // chop / shatter / wolf anim stalls the main thread for 50-150ms, which
+    // is what the L1 min=11 FPS dip was tracking.
+    this.runWarmupPass();
+
     // Signal UIScene to show level start banner
     this.time.delayedCall(300, () => {
       this.events.emit('level-start', { levelNum: this.currentLevelNum, levelName: cfg.name ?? '' });
     });
+  }
+
+  private runWarmupPass(): void {
+    // Emit each pooled particle emitter once far off-screen so the particle
+    // shader is compiled on the first render cycle instead of mid-combat.
+    const OFF = -99999;
+    this.woodchipEmitter.emitParticleAt(OFF, OFF, 2);
+    this.iceShatterEmitter.emitParticleAt(OFF, OFF, 2);
+    this.slashEmitter.emitParticleAt(OFF, OFF, 2);
+    this.snowDust.emitParticleAt(OFF, OFF, 2);
+    this.footprintEmitter.emitParticleAt(OFF, OFF, 1);
+
+    // Pre-bind each character atlas by rendering one invisible frame of its
+    // walk animation. Phaser uploads atlas textures lazily on first draw;
+    // doing it here means the player, workers, wolves and deer are already
+    // GPU-resident before the player can move.
+    const warmupSprites: Phaser.GameObjects.Sprite[] = [];
+    for (const key of ['hero', 'worker', 'wolf', 'deer']) {
+      if (!this.textures.exists(key)) continue;
+      // Each atlas uses the `${key}_walk_d0_f0` frame; the particle-free
+      // pre-draw forces the texture into the GPU without affecting gameplay.
+      const sp = this.add.sprite(OFF, OFF, key, `${key}_walk_d0_f0`)
+        .setDisplaySize(1, 1).setAlpha(0.001).setDepth(-99999);
+      warmupSprites.push(sp);
+    }
+    // Drop the warmup sprites on the next tick — the GPU upload is already
+    // queued from create()'s display-list flush.
+    this.time.delayedCall(50, () => warmupSprites.forEach(s => s.destroy()));
+
+    // Nudge audio decode by playing each loop at zero volume for 1 frame.
+    // Phaser decodes on load, but iOS WebAudio occasionally stalls on first
+    // play — a warm play avoids a 100-300ms hitch at the first real sound.
+    if (this.cache.audio.exists('snd_fire_loop')) {
+      const s = this.sound.add('snd_fire_loop', { volume: 0 });
+      try { s.play(); s.stop(); s.destroy(); } catch {}
+    }
   }
 
   private drawPadOutline(): void {
@@ -1284,11 +1350,7 @@ export default class GameScene extends Phaser.Scene {
           sv.iceGfx?.destroy(); sv.iceGfx = undefined;
           sv.frostEmitter?.destroy(); sv.frostEmitter = undefined;
           sv.sprite.clearTint();
-          this.add.particles(sv.lx, sv.ly - 38, 'effect_ice_freeze_shatter', {
-            speed: { min: 70, max: 190 }, angle: { min: 0, max: 360 },
-            scale: { start: 0.14, end: 0 }, alpha: { start: 1, end: 0 },
-            lifespan: 600, emitting: false,
-          }).explode(18);
+          this.iceShatterEmitter.emitParticleAt(sv.lx, sv.ly - 38, 18);
           const excl = this.add.text(sv.lx, sv.ly - 80, '!', {
             fontFamily: "GameFont, cursive", fontSize: '34px', color: '#ffff00', stroke: '#000000', strokeThickness: 5,
           }).setOrigin(0.5, 1).setDepth(sv.sprite.depth + 20);
@@ -1420,12 +1482,8 @@ export default class GameScene extends Phaser.Scene {
           if (this.gameOver || hitTarget.state === 'dead') return;
           safePlay(this, 'snd_axe_chop', { volume: 0.55 });
           hitTarget.hp--; hitTarget.hitFlashMs = 180;
-          // Impact burst at wolf
-          this.add.particles(hitTarget.lx, hitTarget.ly - 20, 'woodchip', {
-            speed:{min:50,max:110}, angle:{min:190,max:350},
-            scale:{start:0.9,end:0.1}, alpha:{start:1,end:0},
-            lifespan:320, emitting:false,
-          }).explode(8);
+          // Impact burst at wolf (pooled emitter)
+          this.woodchipEmitter.emitParticleAt(hitTarget.lx, hitTarget.ly - 20, 8);
           // Per-hit meat
           if (hitTarget.spec.meatPerHit > 0 && this.carriedMeat < cfg.player.carryCapacity) {
             this.spawnMeatFromHit(hitTarget.lx, hitTarget.ly);
@@ -1471,6 +1529,18 @@ export default class GameScene extends Phaser.Scene {
         a.respawnMs = Math.max(0, a.respawnMs - delta);
         if (a.respawnMs <= 0 && a.deathMs <= 0) this.respawnAnimal(a);
         continue;
+      }
+
+      // Off-screen roaming animals: skip the full AI/anim update this frame.
+      // We still tick the roam timer so they'll pick a fresh target when they
+      // re-enter view. Aggroed animals (circle/windup/lunge/backoff/flee) are
+      // always near the player, so they stay in view and keep updating.
+      if (a.state === 'roam' && !inView(a.lx, a.ly)) {
+        const d2Fast = (this.playerLX - a.lx) ** 2 + (this.playerLY - a.ly) ** 2;
+        if (d2Fast > (a.spec.aggroRange * 1.8) ** 2) {
+          a.roamChangeMs = Math.max(0, a.roamChangeMs - delta);
+          continue;
+        }
       }
 
       // Track previous position for direction computation
@@ -1695,13 +1765,16 @@ export default class GameScene extends Phaser.Scene {
       this.stageBannerMs = Math.max(0, this.stageBannerMs - delta);
     }
 
-    // Depth sort — only update depth for sprites near the camera; off-screen sprites retain
-    // their last depth value (which is correct since they haven't moved).
-    // Saves O(N) setDepth calls for the 50-150 procedural world fill sprites on L9+.
+    // Depth sort — only update depth for on-screen sprites whose y actually moved.
+    // We cache the last applied y on the sprite itself. Calling setDepth marks
+    // the display list dirty for a re-sort; skipping unchanged sprites reduces
+    // dirty flags from ~100/frame (L15) to ~a dozen moving entities.
     for (const sp of this.depthGroup) {
-      if (inView(sp.x, sp.y)) {
-        sp.setDepth(sp === this.fireSprite ? sp.y + 17 : sp.y);
-      }
+      if (!inView(sp.x, sp.y)) continue;
+      const y = sp.y;
+      if ((sp as any)._lastDepthY === y) continue;
+      (sp as any)._lastDepthY = y;
+      sp.setDepth(sp === this.fireSprite ? y + 17 : y);
     }
 
     // Player HP bar (world-space, above head + any carried items)
@@ -1805,11 +1878,7 @@ export default class GameScene extends Phaser.Scene {
   // ── Helpers ───────────────────────────────────────────────────────────────
 
   private spawnWoodChips(x: number, y: number): void {
-    this.add.particles(x, y, 'woodchip', {
-      speed: { min: 55, max: 140 }, angle: { min: 190, max: 350 },
-      scale: { start: 1.1, end: 0.1 }, alpha: { start: 1, end: 0 },
-      lifespan: 520, emitting: false,
-    }).explode(14);
+    this.woodchipEmitter.emitParticleAt(x, y, 14);
   }
 
   private spawnFlyingLog(fromX: number, fromY: number, toX: number, toY: number): void {
@@ -2072,12 +2141,8 @@ export default class GameScene extends Phaser.Scene {
     const kdx = this.playerLX - a.lx; const kdy = this.playerLY - a.ly;
     const klen = Math.sqrt(kdx*kdx + kdy*kdy);
     if (klen > 0) { this.playerKnockVX = (kdx/klen)*a.spec.knockbackPx; this.playerKnockVY = (kdy/klen)*a.spec.knockbackPx; }
-    // Slash VFX on player
-    this.add.particles(this.playerLX, this.playerLY - 30, 'slashmark', {
-      speed:{min:20,max:60}, angle:{min:220,max:320},
-      scale:{start:0.9,end:0.4}, alpha:{start:1,end:0},
-      lifespan:280, emitting:false,
-    }).explode(5);
+    // Slash VFX on player (pooled emitter)
+    this.slashEmitter.emitParticleAt(this.playerLX, this.playerLY - 30, 5);
     this.cameras.main.shake(140, 0.0045);
     safePlay(this, 'snd_ice_shatter', { volume: 0.38 });
     if (this.playerHp <= 0) this.killPlayer();

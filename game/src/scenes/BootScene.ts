@@ -24,7 +24,10 @@ export default class BootScene extends Phaser.Scene {
   create(): void {
     const params = new URLSearchParams(window.location.search);
     const levelParam = params.get('level');
-    if (levelParam) {
+    const endlessParam = params.get('endless');
+    if (endlessParam === '1') {
+      this.scene.start('EndlessScene');
+    } else if (levelParam) {
       const num = parseInt(levelParam, 10);
       const key = `level${String(num).padStart(2, '0')}`;
       this.scene.start('GameScene', { levelKey: key, levelNum: num });

@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { FF } from '../ui/theme';
-import { t } from '../i18n';
+import { t, tFmt } from '../i18n';
+import { isEndlessUnlocked, getEndlessBest } from '../progress';
 
 export default class MainMenuScene extends Phaser.Scene {
   constructor() { super({ key: 'MainMenuScene' }); }
@@ -226,6 +227,79 @@ export default class MainMenuScene extends Phaser.Scene {
     settZone.on('pointerup', () => {
       this.cameras.main.fadeOut(200, 0, 0, 0);
       this.time.delayedCall(210, () => this.scene.start('SettingsScene'));
+    });
+
+    // ── Endless Winter button ─────────────────────────────────────────────
+    const unlocked = isEndlessUnlocked();
+    const endW = Math.min(W * 0.82, 320);
+    const endH = Math.round(H * 0.07);
+    const endY = rowY + smH / 2 + endH / 2 + 10;
+
+    // Reuse makeWoodBtn style via inline implementation using 'gold' variant look.
+    const buildEndlessBtn = (): Phaser.GameObjects.Rectangle => {
+      const cont = this.add.container(CX, endY).setDepth(10);
+      const r = Math.min(endH / 3, 18);
+      const bgCol  = unlocked ? 0x1a3a44 : 0x1e1e2a;
+      const borCol = unlocked ? 0x55bbcc : 0x3a3a55;
+      const shCol  = unlocked ? 0x0a1e22 : 0x0e0e14;
+
+      const shadow = this.add.graphics();
+      shadow.fillStyle(shCol, 0.55);
+      shadow.fillRoundedRect(-endW / 2 + 2, -endH / 2 + 3, endW, endH, r);
+
+      const bgGfx = this.add.graphics();
+      bgGfx.fillStyle(bgCol, 1).fillRoundedRect(-endW / 2, -endH / 2, endW, endH, r);
+      bgGfx.lineStyle(2.5, borCol, 1).strokeRoundedRect(-endW / 2, -endH / 2, endW, endH, r);
+      bgGfx.lineStyle(1.5, 0xaaeeff, unlocked ? 0.28 : 0.10);
+      bgGfx.strokeRoundedRect(-endW / 2 + 2, -endH / 2 + 2, endW - 4, endH - 4, r - 1);
+
+      const titleColor = unlocked ? '#d8f4ff' : '#555566';
+      const title = this.add.text(0, unlocked ? -8 : 0, t('endlessTitle'), {
+        fontFamily: FF, fontSize: `${Math.round(endH * 0.38)}px`, fontStyle: 'bold',
+        color: titleColor, stroke: '#001a2a', strokeThickness: 3,
+      }).setOrigin(0.5);
+
+      let sub: Phaser.GameObjects.Text | null = null;
+      if (unlocked) {
+        const best = getEndlessBest();
+        const bm = Math.floor(best.seconds / 60);
+        const bs = Math.floor(best.seconds % 60);
+        const tStr = best.wave > 0
+          ? tFmt('endlessBest', { wave: best.wave, time: `${String(bm).padStart(2,'0')}:${String(bs).padStart(2,'0')}` })
+          : '';
+        if (tStr) sub = this.add.text(0, endH * 0.22, tStr, {
+          fontFamily: FF, fontSize: `${Math.round(endH * 0.22)}px`,
+          color: '#99ddff',
+        }).setOrigin(0.5);
+      } else {
+        sub = this.add.text(0, endH * 0.22, t('endlessUnlockHint'), {
+          fontFamily: FF, fontSize: `${Math.round(endH * 0.22)}px`,
+          color: '#99aacc',
+        }).setOrigin(0.5);
+      }
+
+      const items: Phaser.GameObjects.GameObject[] = [shadow, bgGfx, title];
+      if (sub) items.push(sub);
+      cont.add(items);
+
+      const zone = this.add.rectangle(CX, endY, endW, endH, 0, 0)
+        .setInteractive({ useHandCursor: true })
+        .setDepth(14) as Phaser.GameObjects.Rectangle;
+
+      zone.on('pointerdown', () => {
+        if (!unlocked) return;
+        this.tweens.add({ targets: cont, scaleX: 0.95, scaleY: 0.95, duration: 55, ease: 'Quad.In' });
+      });
+      const reset = () => this.tweens.add({ targets: cont, scaleX: 1, scaleY: 1, duration: 100, ease: 'Back.Out' });
+      zone.on('pointerup', reset);
+      zone.on('pointerout', () => this.tweens.add({ targets: cont, scaleX: 1, scaleY: 1, duration: 80 }));
+      return zone;
+    };
+    const endlessZone = buildEndlessBtn();
+    endlessZone.on('pointerup', () => {
+      if (!unlocked) return;
+      this.cameras.main.fadeOut(220, 0, 0, 0);
+      this.time.delayedCall(230, () => this.scene.start('EndlessScene'));
     });
 
     this.add.text(CX, H - safeT - 8, 'v1.0', {
