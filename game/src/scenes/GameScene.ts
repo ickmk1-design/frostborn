@@ -37,6 +37,7 @@ interface Survivor {
   thawBar?: Phaser.GameObjects.Graphics;
   iceGfx?: Phaser.GameObjects.Graphics;
   frostEmitter?: Phaser.GameObjects.Particles.ParticleEmitter;
+  shadow?: Phaser.GameObjects.Image;
   workerState?: WorkerState;
   workerTarget?: TreeNode;
   workerCarrying: number;
@@ -59,6 +60,7 @@ interface Survivor {
 
 interface AnimalEntity {
   sprite: Phaser.GameObjects.Sprite;
+  shadow?: Phaser.GameObjects.Image;
   atlasKey: string;
   baseTint: number;
   isBoss: boolean;
@@ -151,11 +153,18 @@ export default class GameScene extends Phaser.Scene {
 
   private snowDust!: Phaser.GameObjects.Particles.ParticleEmitter;
   private hintArrowGfx!: Phaser.GameObjects.Graphics;
+  private _hintArrowDrawn = false;
 
   private hintTimer = 0;
 
-  private shadowGfx!: Phaser.GameObjects.Graphics;
   private decorSprites: Phaser.GameObjects.Image[] = [];
+  // Dedicated shadow images (pre-rendered ellipse texture, positioned per frame).
+  // Replaces per-frame fillEllipse which triggered earcut triangulation + texImage2D
+  // upload on every entity each frame — a top hotspot on L15.
+  private playerShadow!: Phaser.GameObjects.Image;
+  private fireShadow!: Phaser.GameObjects.Image;
+  private tentShadow: Phaser.GameObjects.Image | null = null;
+  private treeShadows: Phaser.GameObjects.Image[] = [];
 
   private fireSoundRef?: Phaser.Sound.BaseSound;
   private windSoundRef?: Phaser.Sound.BaseSound;
@@ -189,6 +198,16 @@ export default class GameScene extends Phaser.Scene {
   private playerKnockVX = 0;
   private playerKnockVY = 0;
   private playerHpBarGfx!: Phaser.GameObjects.Graphics;
+  private _hpBarDrawn = false;
+  // Scratch output objects for per-frame helpers — avoids allocating a new
+  // {x,y} / {vx,vy} / {ix,iy} on every call (called ~4-6x per entity per frame
+  // = ~100+ allocs/frame on L15 → noticeable GC pressure).
+  private _scratchXY = { x: 0, y: 0 };
+  private _scratchXY2 = { x: 0, y: 0 };
+  private _scratchXY3 = { x: 0, y: 0 };
+  private _scratchVV = { vx: 0, vy: 0 };
+  private _scratchIso = { ix: 0, iy: 0 };
+  private _scratchIso2 = { ix: 0, iy: 0 };
   private animalsKilled = 0;
   private goalStages: Array<{type:string; target:number|string; hintText:string; hintTextTr?:string; completedText?:string}> = [];
   private currentStageIdx = 0;
@@ -330,6 +349,17 @@ export default class GameScene extends Phaser.Scene {
     makeTex('smokepuff', 170, 170, 170, 0.6,  28);
     makeTex('steampuff', 221, 238, 255, 0.65, 20);
     makeTex('woodchip',  160, 100,  40, 1.0,  7);
+
+    // Pre-rendered shadow ellipse. Used as an Image sprite under each entity.
+    // Baked to a 64x24 texture (large enough to cover alpha wolf when scaled).
+    // We scale per-entity via setDisplaySize() — no per-frame earcut cost.
+    if (!this.textures.exists('entity_shadow')) {
+      const sg = this.make.graphics({ add: false } as any);
+      sg.fillStyle(0x000000, 0.20);
+      sg.fillEllipse(32, 12, 60, 22);
+      sg.generateTexture('entity_shadow', 64, 24);
+      sg.destroy();
+    }
 
     // Footprint texture: two paired boot sole ovals (Fix 3)
     if (!this.textures.exists('footstep')) {
@@ -487,9 +517,14 @@ export default class GameScene extends Phaser.Scene {
     }
 
     // ── Trees — inside camp scaled to 70px so they don't block fire/pad/gate (Fix 6)
+    this.treeShadows = [];
     for (const td of cfg.trees) {
       const [tx, ty] = td.iso as [number, number];
       const pos = isoToScreen(tx, ty, ox, oy);
+      // Static shadow (trees don't move — set once, no per-frame work)
+      const shadow = this.add.image(pos.x, pos.y, 'entity_shadow')
+        .setDisplaySize(54, 20).setDepth(2);
+      this.treeShadows.push(shadow);
       const sp = this.add.image(pos.x, pos.y, 'prop_snow_pine_tree_01')
         .setDisplaySize(70, 70).setOrigin(0.5, 0.85);
       this.depthGroup.push(sp);
@@ -582,6 +617,10 @@ export default class GameScene extends Phaser.Scene {
       .setDepth(5)
       .setOrigin(0.5, 0.5);
 
+    // Fire shadow (static — set once)
+    this.fireShadow = this.add.image(this.fireX, this.fireY, 'entity_shadow')
+      .setDisplaySize(62, 24).setDepth(2);
+
     this.fireSprite = this.add.image(this.fireX, this.fireY, 'building_cauldron_firepit_01')
       .setDisplaySize(115, 115).setOrigin(0.5, 0.85);
     this.depthGroup.push(this.fireSprite);
@@ -598,7 +637,7 @@ export default class GameScene extends Phaser.Scene {
       lifespan: 1200, frequency: 190, gravityY: -18,
     }).setDepth(this.fireY + 9);
 
-    this.dropZoneGfx = this.add.graphics().setDepth(2).setAlpha(0);
+    this.dropZoneGfx = this.add.graphics().setDepth(2).setVisible(false);
     this.dropZoneGfx.lineStyle(1.5, 0xffffff, 0.35);
     this.dropZoneGfx.strokeCircle(this.fireX, this.fireY, cfg.player.dropRangePx * 0.88);
 
@@ -636,6 +675,9 @@ export default class GameScene extends Phaser.Scene {
     const si = cfg.player.startIso as [number, number];
     const sp2 = isoToScreen(si[0], si[1], ox, oy);
     this.playerLX = sp2.x; this.playerLY = sp2.y;
+    // Player shadow (dynamic — moves with player)
+    this.playerShadow = this.add.image(sp2.x, sp2.y, 'entity_shadow')
+      .setDisplaySize(44, 16).setDepth(2);
     this.playerSprite = this.add.sprite(sp2.x, sp2.y, 'hero', 'hero_walk_d0_f0')
       .setDisplaySize(CHAR_SIZE, CHAR_SIZE).setOrigin(0.5, 1.0);
     this.depthGroup.push(this.playerSprite);
@@ -650,7 +692,7 @@ export default class GameScene extends Phaser.Scene {
     }).setDepth(4);
 
     // Drop shadows (drawn below characters each frame)
-    this.shadowGfx = this.add.graphics().setDepth(2);
+    // (shadowGfx removed — shadows are now per-entity Image sprites with pre-baked texture)
 
     // Footprint emitter — small paired boot prints (Fix 3)
     this.footprintEmitter = this.add.particles(0, 0, 'footstep', {
@@ -726,9 +768,14 @@ export default class GameScene extends Phaser.Scene {
         .setDisplaySize(CHAR_SIZE, CHAR_SIZE).setOrigin(0.5, 1.0).setTint(0x88ccff);
       this.depthGroup.push(sp3);
 
+      // Per-survivor shadow image (positioned each frame — but no earcut cost)
+      const svShadow = this.add.image(svPos.x, svPos.y, 'entity_shadow')
+        .setDisplaySize(42, 15).setDepth(2);
+
       this.survivors.push({
         sprite: sp3, state: 'frozen', thawProgress: 0,
         thawBar: this.add.graphics(), iceGfx, frostEmitter,
+        shadow: svShadow,
         workerCarrying: 0, bobOffset: Math.random() * Math.PI * 2,
         lx: svPos.x, ly: svPos.y,
         waddlePhase: Math.random() * Math.PI * 2,
@@ -785,8 +832,13 @@ export default class GameScene extends Phaser.Scene {
         if (baseTint !== 0xffffff) sp.setTint(baseTint);
         let eyeGlow: Phaser.GameObjects.Image | undefined;
         // Eye glow removed — per-frame head tracking not feasible without frame-level bone data
+        // Per-animal shadow (dynamic — moves + scales with animal)
+        const shadowBaseForScale = atlasKey === 'deer' ? 136 : 144;
+        const shScale = displaySize / shadowBaseForScale;
+        const animalShadow = this.add.image(pos.x, pos.y, 'entity_shadow')
+          .setDisplaySize(54 * shScale, 20 * shScale).setDepth(2);
         const animal: AnimalEntity = {
-          sprite: sp, atlasKey, baseTint, isBoss, eyeGlow, summonedMinions: false, displaySize,
+          sprite: sp, shadow: animalShadow, atlasKey, baseTint, isBoss, eyeGlow, summonedMinions: false, displaySize,
           hp: spec.hp, maxHp: spec.hp,
           lx: pos.x, ly: pos.y, state: 'roam', dir: 0,
           bobPhase: Math.random() * Math.PI * 2,
@@ -1237,7 +1289,7 @@ export default class GameScene extends Phaser.Scene {
       }
     }
 
-    this.dropZoneGfx.setAlpha(this.carriedLogs > 0 || this.carriedMeat > 0 ? 1 : 0);
+    this.dropZoneGfx.setVisible(this.carriedLogs > 0 || this.carriedMeat > 0);
 
     // Tree collection
     for (const tree of this.trees) {
@@ -1319,8 +1371,11 @@ export default class GameScene extends Phaser.Scene {
     // HP regen near fire or inside camp walls
     if (!this.playerDead && this.playerHp < this.playerHpMax) {
       const nearFire = (this.playerLX - this.fireX)**2 + (this.playerLY - this.fireY)**2 < 160**2;
-      const isoPos = screenToIso(this.playerLX, this.playerLY, cfg.originX, cfg.originY);
-      const inCamp = isoPos.ix >= 3 && isoPos.ix <= 13 && isoPos.iy >= 3 && isoPos.iy <= 12;
+      // Inline screenToIso — avoid per-frame object alloc
+      const ox = cfg.originX; const oy = cfg.originY;
+      const ix = ((this.playerLX - ox) / 40 + (this.playerLY - oy) / 20) / 2;
+      const iy = ((this.playerLY - oy) / 20 - (this.playerLX - ox) / 40) / 2;
+      const inCamp = ix >= 3 && ix <= 13 && iy >= 3 && iy <= 12;
       if (nearFire || inCamp) {
         this.playerHp = Math.min(this.playerHpMax, this.playerHp + (cfg.player.hpRegenPerSec ?? 0.5) * dt);
       }
@@ -1418,45 +1473,50 @@ export default class GameScene extends Phaser.Scene {
     // Camera (needed for depth sort + fire glow below)
     const cam = this.cameras.main;
 
-    // Hint arrows — draw at world positions, scale offsets by 1/zoom so they stay the same visual size
-    this.hintArrowGfx.clear();
-    {
+    // Hint arrows — only redraw when something is visible; otherwise setVisible(false)
+    // so the Graphics object is culled from the WebGL render entirely.
+    const showFrozenHint = !!nearFrozen;
+    const showPadHint = !this.tentBuilt && this.coins > 0 && !nearFrozen;
+    if (showFrozenHint || showPadHint) {
+      this.hintArrowGfx.clear();
       const iz = 1 / cam.zoom;
-      if (nearFrozen) {
+      if (showFrozenHint && nearFrozen) {
         const wx = nearFrozen.lx, wy = nearFrozen.ly;
         const a = 0.55 + 0.45 * Math.sin(time / 190);
         this.hintArrowGfx.fillStyle(0xffff33, a);
         this.hintArrowGfx.fillTriangle(wx, wy - 94*iz, wx - 10*iz, wy - 108*iz, wx + 10*iz, wy - 108*iz);
         this.hintArrowGfx.fillRect(wx - 4*iz, wy - 122*iz, 8*iz, 16*iz);
       }
-      if (!this.tentBuilt && this.coins > 0 && !nearFrozen) {
+      if (showPadHint) {
         const a = 0.6 + 0.4 * Math.sin(time / 200);
         this.hintArrowGfx.fillStyle(0x44ff88, a);
         this.hintArrowGfx.fillTriangle(this.padX, this.padY - 48*iz, this.padX - 10*iz, this.padY - 62*iz, this.padX + 10*iz, this.padY - 62*iz);
         this.hintArrowGfx.fillRect(this.padX - 4*iz, this.padY - 76*iz, 8*iz, 16*iz);
       }
+      if (!this._hintArrowDrawn) { this.hintArrowGfx.setVisible(true); this._hintArrowDrawn = true; }
+    } else if (this._hintArrowDrawn) {
+      this.hintArrowGfx.clear().setVisible(false);
+      this._hintArrowDrawn = false;
     }
 
-    // Drop shadows (single graphics pass, depth between ground and sprites)
-    // Only draw shadows for dynamic entities (player, fire, trees, survivors, tent).
-    // Decor sprites are static and numerous — skipping them removes O(N) per-frame fillEllipse calls
-    // that caused FPS drops on L9+ where decorSprites count climbs to 30+.
-    this.shadowGfx.clear();
-    this.shadowGfx.fillStyle(0x000000, 0.20);
+    // Drop shadows — per-entity Image sprites (pre-rendered ellipse texture).
+    // Position each shadow under its entity; off-screen entities get their shadow
+    // toggled off. NO per-frame fillEllipse / earcut / texImage2D cost — a top
+    // L15 hotspot (was ~21% of frame time via GraphicsWebGLRenderer + texImage2D).
     // Camera bounds for off-screen culling (with margin to avoid pop-in)
     const camLeft   = cam.scrollX - 80;
     const camRight  = cam.scrollX + cam.width / cam.zoom + 80;
     const camTop    = cam.scrollY - 80;
     const camBottom = cam.scrollY + cam.height / cam.zoom + 80;
     const inView = (x: number, y: number) => x >= camLeft && x <= camRight && y >= camTop && y <= camBottom;
-    this.shadowGfx.fillEllipse(this.playerLX, this.playerLY, 44, 16);
-    this.shadowGfx.fillEllipse(this.fireX, this.fireY, 62, 24);
-    for (const tree of this.trees) this.shadowGfx.fillEllipse(tree.sprite.x, tree.sprite.y, 54, 20);
+    this.playerShadow.setPosition(this.playerLX, this.playerLY);
+    // Fire, trees, tent are static — set in create()/buildTent, no per-frame work.
     for (const sv of this.survivors) {
-      if (sv.sprite.alpha > 0 && inView(sv.lx, sv.ly)) this.shadowGfx.fillEllipse(sv.lx, sv.ly, 42, 15);
+      if (!sv.shadow) continue;
+      const visible = sv.sprite.alpha > 0 && inView(sv.lx, sv.ly);
+      sv.shadow.setVisible(visible);
+      if (visible) sv.shadow.setPosition(sv.lx, sv.ly);
     }
-    // Decor sprites do NOT get per-frame shadows — saves 30+ fillEllipse calls on later levels
-    if (this.tentSprite) this.shadowGfx.fillEllipse(this.tentSprite.x, this.tentSprite.y, 70, 26);
 
     // ── Animals ────────────────────────────────────────────────────────────────
     this.playerAttackMs = Math.max(0, this.playerAttackMs - delta);
@@ -1650,8 +1710,9 @@ export default class GameScene extends Phaser.Scene {
         const outerW = 3 - wallMargin, outerE = 13 + wallMargin;
         const outerN = 3 - wallMargin, outerS = 12 + wallMargin;
 
-        const curr = screenToIso(a.lx, a.ly, ox, oy);
-        const ix0 = curr.ix, iy0 = curr.iy;
+        // Inline screenToIso — avoid per-animal per-frame object alloc
+        const ix0 = ((a.lx - ox) / HW + (a.ly - oy) / HH) / 2;
+        const iy0 = ((a.ly - oy) / HH - (a.lx - ox) / HW) / 2;
 
         if (ix0 > outerW && ix0 < outerE && iy0 > outerN && iy0 < outerS) {
           // Inside or within margin — push to nearest outer edge
@@ -1712,10 +1773,10 @@ export default class GameScene extends Phaser.Scene {
       }
 
       // Shadow — only when sprite is visible and on-screen
-      if (a.sprite.alpha > 0 && inView(a.lx, a.ly)) {
-        const shadowBase = a.atlasKey === 'deer' ? 136 : 144;
-        const shadowScale = a.displaySize / shadowBase;
-        this.shadowGfx.fillEllipse(a.lx, a.ly, 54 * shadowScale, 20 * shadowScale);
+      if (a.shadow) {
+        const visible = a.sprite.alpha > 0 && inView(a.lx, a.ly);
+        a.shadow.setVisible(visible);
+        if (visible) a.shadow.setPosition(a.lx, a.ly);
       }
     }
     // ── Meat drops ─────────────────────────────────────────────────────────────
@@ -1778,8 +1839,10 @@ export default class GameScene extends Phaser.Scene {
     }
 
     // Player HP bar (world-space, above head + any carried items)
-    this.playerHpBarGfx.clear();
+    // Skip entire redraw when HP is full or player is dead; also setVisible(false)
+    // so the Graphics object is culled from the WebGL render entirely.
     if (!this.playerDead && this.playerHp < this.playerHpMax) {
+      this.playerHpBarGfx.clear();
       const bw = 44; const bx = this.playerLX - bw / 2;
       const carried = Math.max(this.carriedLogs, this.carriedMeat);
       const by = this.playerLY + this.playerBobY - CHAR_SIZE - 10 - (carried > 0 ? carried * 14 + 20 : 0);
@@ -1787,6 +1850,10 @@ export default class GameScene extends Phaser.Scene {
       const pct = this.playerHp / this.playerHpMax;
       const col = pct > 0.5 ? 0x44ff44 : pct > 0.25 ? 0xffaa00 : 0xff2222;
       this.playerHpBarGfx.fillStyle(col, 1).fillRoundedRect(bx, by, Math.max(0, bw * pct), 6, 2);
+      if (!this._hpBarDrawn) { this.playerHpBarGfx.setVisible(true); this._hpBarDrawn = true; }
+    } else if (this._hpBarDrawn) {
+      this.playerHpBarGfx.clear().setVisible(false);
+      this._hpBarDrawn = false;
     }
 
     // Fire glow — animated radial gradient
@@ -1925,6 +1992,8 @@ export default class GameScene extends Phaser.Scene {
   private buildTent(): void {
     this.tentBuilt = true;
     this.padGfx.destroy(); this.padLabel.destroy();
+    this.tentShadow = this.add.image(this.padX, this.padY, 'entity_shadow')
+      .setDisplaySize(70, 26).setDepth(2);
     this.tentSprite = this.add.image(this.padX, this.padY, 'building_tent_canvas_01')
       .setDisplaySize(104, 104).setOrigin(0.5, 0.85);
     this.depthGroup.push(this.tentSprite);
@@ -2067,6 +2136,7 @@ export default class GameScene extends Phaser.Scene {
     w.sprite.setDepth(w.sprite.y);
   }
 
+  // Returns a reused scratch object (do not retain the reference).
   private applySeparation(lx: number, ly: number, self: Survivor | null): { x: number; y: number } {
     const SEP_R = 30;
     let rx = lx; let ry = ly;
@@ -2085,7 +2155,8 @@ export default class GameScene extends Phaser.Scene {
         const d = Math.sqrt(d2); rx = sv.lx + (dx/d)*SEP_R; ry = sv.ly + (dy/d)*SEP_R;
       }
     }
-    return { x: rx, y: ry };
+    this._scratchXY.x = rx; this._scratchXY.y = ry;
+    return this._scratchXY;
   }
 
   private loseGame(): void {
@@ -2217,8 +2288,10 @@ export default class GameScene extends Phaser.Scene {
       sp.setAlpha(0);
       this.tweens.add({ targets: sp, alpha: 1, duration: 400 });
       this.depthGroup.push(sp);
+      const minionShadow = this.add.image(sx, sy, 'entity_shadow')
+        .setDisplaySize(54 * (97 / 144), 20 * (97 / 144)).setDepth(2);
       const minion: AnimalEntity = {
-        sprite: sp, atlasKey: 'wolf', baseTint: 0xffffff, isBoss: false,
+        sprite: sp, shadow: minionShadow, atlasKey: 'wolf', baseTint: 0xffffff, isBoss: false,
         eyeGlow: undefined, summonedMinions: false, displaySize: 97,
         hp: spec.hp, maxHp: spec.hp, dir: 0,
         lx: sx, ly: sy, state: 'circle',
@@ -2257,6 +2330,7 @@ export default class GameScene extends Phaser.Scene {
   // Corner assist nudges the player into the opening if they're within 1 tile of it.
   // Projects a screen-space velocity so it cannot push the character through a wall.
   // lx/ly are the character's current screen-space position.
+  // Returns a reused scratch object (do not retain the reference).
   private projectVelocityFromWalls(velX: number, velY: number, lx: number, ly: number): { vx: number; vy: number } {
     const ox = cfg.originX; const oy = cfg.originY;
     const HW = TILE_W / 2; const HH = TILE_H / 2;
@@ -2267,8 +2341,9 @@ export default class GameScene extends Phaser.Scene {
     let vix = (velX / HW + velY / HH) / 2;
     let viy = (-velX / HW + velY / HH) / 2;
 
-    // Current iso position
-    const { ix, iy } = screenToIso(lx, ly, ox, oy);
+    // Current iso position (inline — avoid screenToIso object alloc)
+    const ix = ((lx - ox) / HW + (ly - oy) / HH) / 2;
+    const iy = ((ly - oy) / HH - (lx - ox) / HW) / 2;
 
     // North wall
     if (iy <= 3 + BUF && viy < 0) viy = 0;
@@ -2281,13 +2356,13 @@ export default class GameScene extends Phaser.Scene {
     // East wall
     if (ix >= 13 - BUF && vix > 0) vix = 0;
 
-    // Iso → screen velocity
-    return {
-      vx: (vix - viy) * HW,
-      vy: (vix + viy) * HH,
-    };
+    // Iso → screen velocity (reuse scratch)
+    this._scratchVV.vx = (vix - viy) * HW;
+    this._scratchVV.vy = (vix + viy) * HH;
+    return this._scratchVV;
   }
 
+  // Returns a reused scratch object (do not retain the reference).
   private wallConstrain(prevSx: number, prevSy: number, newSx: number, newSy: number): { x: number; y: number } {
     const ox = cfg.originX; const oy = cfg.originY;
     const HW = TILE_W / 2; const HH = TILE_H / 2;
@@ -2296,14 +2371,17 @@ export default class GameScene extends Phaser.Scene {
     const CORNER_R = 1.1; // iso tiles of corner assist
     const M = 0.65;
 
-    const p = screenToIso(prevSx, prevSy, ox, oy);
-    let { ix, iy } = screenToIso(newSx, newSy, ox, oy);
+    // Inline screenToIso — avoids 2x object alloc per call
+    const pIx = ((prevSx - ox) / HW + (prevSy - oy) / HH) / 2;
+    const pIy = ((prevSy - oy) / HH - (prevSx - ox) / HW) / 2;
+    let ix = ((newSx - ox) / HW + (newSy - oy) / HH) / 2;
+    let iy = ((newSy - oy) / HH - (newSx - ox) / HW) / 2;
 
     // North wall
-    if ((p.iy >= 3) !== (iy >= 3)) iy = p.iy >= 3 ? 3 + M : 3 - M;
+    if ((pIy >= 3) !== (iy >= 3)) iy = pIy >= 3 ? 3 + M : 3 - M;
 
     // South wall (gate at ix 7–10)
-    if ((p.iy <= 12) !== (iy <= 12)) {
+    if ((pIy <= 12) !== (iy <= 12)) {
       if (ix >= GATE_MIN && ix <= GATE_MAX) {
         // Within gate opening — pass through freely
       } else {
@@ -2314,19 +2392,22 @@ export default class GameScene extends Phaser.Scene {
           ix = ix < GATE_CENTER ? GATE_MIN + 0.12 : GATE_MAX - 0.12;
         } else {
           // Block crossing
-          iy = p.iy <= 12 ? 12 - M : 12 + M;
+          iy = pIy <= 12 ? 12 - M : 12 + M;
         }
       }
     }
 
     // West wall
-    if ((p.ix >= 3) !== (ix >= 3)) ix = p.ix >= 3 ? 3 + M : 3 - M;
+    if ((pIx >= 3) !== (ix >= 3)) ix = pIx >= 3 ? 3 + M : 3 - M;
     // East wall
-    if ((p.ix <= 13) !== (ix <= 13)) ix = p.ix <= 13 ? 13 - M : 13 + M;
+    if ((pIx <= 13) !== (ix <= 13)) ix = pIx <= 13 ? 13 - M : 13 + M;
 
-    return { x: ox + (ix - iy) * HW, y: oy + (ix + iy) * HH };
+    this._scratchXY2.x = ox + (ix - iy) * HW;
+    this._scratchXY2.y = oy + (ix + iy) * HH;
+    return this._scratchXY2;
   }
 
+  // Returns a reused scratch object (do not retain the reference).
   private constrainToObstacles(sx: number, sy: number): { x: number; y: number } {
     let rx = sx; let ry = sy;
     for (const obs of this.obstacles) {
@@ -2336,7 +2417,8 @@ export default class GameScene extends Phaser.Scene {
         const d = Math.sqrt(d2); rx = obs.x + (dx/d)*obs.r; ry = obs.y + (dy/d)*obs.r;
       }
     }
-    return { x: rx, y: ry };
+    this._scratchXY3.x = rx; this._scratchXY3.y = ry;
+    return this._scratchXY3;
   }
 
   // Dev/test helper — directly applies wolfDir and plays the animation; returns anim key

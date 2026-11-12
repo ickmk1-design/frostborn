@@ -1,0 +1,12 @@
+CPU throttle: 4x
+GameScene ready — profiling for 90 s
+Install: ok
+
+=== L15 FPS Profile (4x CPU throttle, 90 s) ===
+Frames sampled: 1072
+Avg frame: 74.3ms  (13.5 FPS)
+p50 frame: 73.3ms
+p95 frame: 100.0ms  (10.0 FPS)
+p99 frame: 116.7ms
+Max frame: 125.0ms  (8.0 FPS min)
+Top 10 longest frames (ms): 117, 117, 118, 118, 118, 118, 120, 122, 123, 125

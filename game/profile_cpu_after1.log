@@ -1,0 +1,26 @@
+CPU throttle: 4x
+GameScene ready — warming up 5s, then profiling 60 s
+
+=== Top 20 self-time hotspots ===
+ 35.42%   22216ms  (program) @ ?:-1
+ 26.87%   16852ms  GraphicsWebGLRenderer @ phaser.js?v=023b757c:32249
+  4.59%    2882ms  batch @ phaser.js?v=023b757c:103800
+  2.96%    1858ms  run @ phaser.js?v=023b757c:104509
+  2.79%    1752ms  texImage2D @ ?:-1
+  2.61%    1639ms  sortLinked @ phaser.js?v=023b757c:57118
+  1.66%    1041ms  Path.addPoint @ phaser.js?v=023b757c:32230
+  1.50%     941ms  (garbage collector) @ ?:-1
+  1.39%     869ms  isEarHashed @ phaser.js?v=023b757c:56991
+  1.22%     765ms  renderWebGLStep @ phaser.js?v=023b757c:25768
+  1.16%     727ms  Point @ phaser.js?v=023b757c:32222
+  0.99%     621ms  earcutLinked @ phaser.js?v=023b757c:56949
+  0.71%     447ms  run @ phaser.js?v=023b757c:105536
+  0.63%     392ms  isEar @ phaser.js?v=023b757c:56979
+  0.56%     348ms  batch @ phaser.js?v=023b757c:103800
+  0.50%     315ms  zOrder @ phaser.js?v=023b757c:57157
+  0.48%     302ms  earcut @ phaser.js?v=023b757c:56896
+  0.46%     285ms  Node @ phaser.js?v=023b757c:57262
+  0.43%     268ms  bufferSubData @ ?:-1
+  0.40%     253ms  bufferSubData @ ?:-1
+
+Raw profile saved to cpu_profile_raw.json
