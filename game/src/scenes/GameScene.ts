@@ -26,6 +26,8 @@ const LEVEL_CONFIGS: Record<string, any> = {
 };
 let cfg: any = level01;
 
+import { readStationsFromCfg, type StationConfig, type StationInstance } from '../systems/stations';
+
 type WorkerState = 'idle' | 'toTree' | 'chopping' | 'toFire';
 
 interface TreeNode { sprite: Phaser.GameObjects.Image; onCooldown: boolean; }
@@ -123,6 +125,9 @@ export default class GameScene extends Phaser.Scene {
 
   private _loadingUI: Phaser.GameObjects.GameObject[] = [];
   private trees: TreeNode[] = [];
+  // Wave 1 scaffold: stations loaded from cfg.stations[] (empty on current levels).
+  private stationCfgs: StationConfig[] = [];
+  private stations: StationInstance[] = [];
   private fireSprite!: Phaser.GameObjects.Image;
   private fireX = 0; private fireY = 0;
   private survivors: Survivor[] = [];
@@ -333,6 +338,9 @@ export default class GameScene extends Phaser.Scene {
     this.nextWorkerTreeIndex = 1; // tree 0 is above fire and blocked; workers start at tree 1
     this.nextWorkerSlot = 0;
     this.numWorkerSlots = Math.max(4, cfg.frozenSurvivors?.length ?? 4);
+    // Wave 1 scaffold — stations scaffold (empty for levels without `stations: []`).
+    this.stationCfgs = readStationsFromCfg(cfg);
+    this.stations = [];
 
     const ox = cfg.originX; const oy = cfg.originY;
 
