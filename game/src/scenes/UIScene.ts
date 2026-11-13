@@ -70,7 +70,10 @@ export default class UIScene extends Phaser.Scene {
   constructor() { super({ key: 'UIScene' }); }
 
   create(): void {
-    this.isDebugMode = typeof window !== 'undefined' && window.location.search.includes('debug');
+    this.isDebugMode = typeof window !== 'undefined' && (
+      window.location.search.includes('debug') ||
+      (() => { try { return localStorage.getItem('fb_debug') === '1'; } catch { return false; } })()
+    );
     const FF = "GameFont, cursive";
 
     // Compute iOS/Android safe area inset from CSS env variable
@@ -211,10 +214,10 @@ export default class UIScene extends Phaser.Scene {
       padding: { x: 18, y: 10 },
     }).setOrigin(0.5, 0).setDepth(10);
 
-    // ── 13. FPS text (debug only) ─────────────────────────────────────────
-    this.fpsText = this.add.text(W - 5, 10, '', {
+    // ── 13. FPS text (always on; tiny corner readout) ─────────────────────
+    this.fpsText = this.add.text(W - 5, Math.max(10, this.safeTop + 2), '', {
       fontSize: '11px', color: '#ffff00',
-    }).setOrigin(1, 0).setDepth(13).setVisible(this.isDebugMode);
+    }).setOrigin(1, 0).setDepth(13).setVisible(true);
 
     // ── 14. Joystick graphics ─────────────────────────────────────────────
     this.joyGfx = this.add.graphics().setDepth(13);
@@ -437,7 +440,7 @@ export default class UIScene extends Phaser.Scene {
 
     // Hint + FPS
     this.hintTextObj.setText(data.hintText).setAlpha(data.hintAlpha);
-    if (this.isDebugMode) this.fpsText.setText(`${data.fps} fps`);
+    this.fpsText.setText(`${data.fps} fps`);
 
     // Joystick
     this.joyGfx.clear();

@@ -48,6 +48,14 @@ export async function markComplete(levelNum: number): Promise<void> {
   await persist();
 }
 
+export async function unlockAllLevels(): Promise<void> {
+  for (let n = 1; n <= 15; n++) {
+    if (!_cache.unlocked.includes(n)) _cache.unlocked.push(n);
+    if (!_cache.completed.includes(n)) _cache.completed.push(n);
+  }
+  await persist();
+}
+
 export function levelNumToKey(n: number): string {
   return `level${String(n).padStart(2, '0')}`;
 }

@@ -2,8 +2,30 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Frostborn</title>
+
+  <!-- PWA manifest -->
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#0a0f1e">
+
+  <!-- iOS: standalone (home-screen) web app -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Frostborn">
+  <meta name="format-detection" content="telephone=no">
+
+  <!-- Touch icons -->
+  <link rel="apple-touch-icon" sizes="180x180" href="icon-180.png">
+  <link rel="apple-touch-icon" sizes="192x192" href="icon-192.png">
+  <link rel="apple-touch-icon" sizes="512x512" href="icon-512.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+  <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
+
+  <!-- iOS startup image (fallback; iOS will scale this to any device) -->
+  <link rel="apple-touch-startup-image" href="icon-512.png">
+
   <style>
     @font-face {
       font-family: 'GameFont';
@@ -12,10 +34,31 @@
       font-display: swap;
       src: url('assets/fonts/Baloo2.ttf') format('truetype');
     }
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    html { overflow: hidden; }
-    html, body { width: 100vw; height: 100vh; background: #0a0f1e; overflow: hidden; }
-    #game { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; overflow: hidden; }
+    * {
+      margin: 0; padding: 0; box-sizing: border-box;
+      -webkit-touch-callout: none;        /* disable long-press callout */
+      -webkit-user-select: none;          /* disable text selection */
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;         /* disable double-tap zoom */
+    }
+    html, body {
+      width: 100%;
+      height: 100%;
+      background: #0a0f1e;
+      overflow: hidden;
+      position: fixed;                    /* prevent pull-to-refresh / rubber-band */
+      overscroll-behavior: none;
+      -webkit-overflow-scrolling: auto;
+    }
+    #game {
+      position: fixed;
+      top: env(safe-area-inset-top, 0);
+      left: env(safe-area-inset-left, 0);
+      right: env(safe-area-inset-right, 0);
+      bottom: env(safe-area-inset-bottom, 0);
+      overflow: hidden;
+    }
     canvas { display: block; }
     #splash {
       position: fixed; inset: 0;
@@ -57,6 +100,40 @@
         setTimeout(() => { splash.classList.add('hidden'); setTimeout(() => splash.remove(), 450); }, 100);
       }
     };
+
+    // Block iOS pinch-zoom (viewport meta alone isn't enough on some iOS versions).
+    document.addEventListener('gesturestart', e => e.preventDefault(), { passive: false });
+    document.addEventListener('gesturechange', e => e.preventDefault(), { passive: false });
+    document.addEventListener('gestureend', e => e.preventDefault(), { passive: false });
+
+    // Block double-tap zoom as a final safety net.
+    let lastTouchEnd = 0;
+    document.addEventListener('touchend', e => {
+      const now = Date.now();
+      if (now - lastTouchEnd < 320) e.preventDefault();
+      lastTouchEnd = now;
+    }, { passive: false });
+
+    // Audio unlock on first user interaction (iOS requires a user gesture to resume AudioContext).
+    (function () {
+      function unlock() {
+        try {
+          const Ctx = window.AudioContext || window.webkitAudioContext;
+          if (!Ctx) return;
+          if (!window.__fbUnlockCtx) window.__fbUnlockCtx = new Ctx();
+          if (window.__fbUnlockCtx.state === 'suspended') window.__fbUnlockCtx.resume();
+          // Also resume Phaser's context once the game has created it.
+          const g = window.__fbGame || (window.Phaser && window.Phaser.GAMES && window.Phaser.GAMES[0]);
+          if (g && g.sound && g.sound.context && g.sound.context.state === 'suspended') g.sound.context.resume();
+        } catch {}
+        window.removeEventListener('touchstart', unlock, true);
+        window.removeEventListener('pointerdown', unlock, true);
+        window.removeEventListener('click', unlock, true);
+      }
+      window.addEventListener('touchstart', unlock, { capture: true, passive: true });
+      window.addEventListener('pointerdown', unlock, { capture: true, passive: true });
+      window.addEventListener('click', unlock, { capture: true, passive: true });
+    })();
   </script>
   <script type="module" src="/src/main.ts"></script>
 </body>
