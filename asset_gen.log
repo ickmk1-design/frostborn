@@ -1,23 +1,26 @@
-2026-11-13 13:53:22 start — 21 assets
-13:53:30 FAIL station_ice_hole_01: Error code: 429 - {'error': {'message': 'You have no credits remaining. Add credits to continue using the API at https://platform.openai.com/settings/organization/billing/.', 'type': 'insufficient_quota', 'param': None, 'code': 'credit_balance_exhausted'}}
-13:53:35 FAIL tile_pier_plank_01: Error code: 429 - {'error': {'message': 'You have no credits remaining. Add credits to continue using the API at https://platform.openai.com/settings/organization/billing/.', 'type': 'insufficient_quota', 'param': None, 'code': 'credit_balance_exhausted'}}
-13:53:43 FAIL tile_water_frozen_01: Error code: 429 - {'error': {'message': 'You have no credits remaining. Add credits to continue using the API at https://platform.openai.com/settings/organization/billing/.', 'type': 'insufficient_quota', 'param': None, 'code': 'credit_balance_exhausted'}}
-13:53:47 FAIL resource_fish_raw_01: Error code: 429 - {'error': {'message': 'You have no credits remaining. Add credits to continue using the API at https://platform.openai.com/settings/organization/billing/.', 'type': 'insufficient_quota', 'param': None, 'code': 'credit_balance_exhausted'}}
-13:53:52 FAIL station_fish_cleaning_table_01: Error code: 429 - {'error': {'message': 'You have no credits remaining. Add credits to continue using the API at https://platform.openai.com/settings/organization/billing/.', 'type': 'insufficient_quota', 'param': None, 'code': 'credit_balance_exhausted'}}
-13:53:59 FAIL station_cook_pot_01: Error code: 429 - {'error': {'message': 'You have no credits remaining. Add credits to continue using the API at https://platform.openai.com/settings/organization/billing/.', 'type': 'insufficient_quota', 'param': None, 'code': 'credit_balance_exhausted'}}
-13:54:05 FAIL station_lumber_mill_01: Error code: 429 - {'error': {'message': 'You have no credits remaining. Add credits to continue using the API at https://platform.openai.com/settings/organization/billing/.', 'type': 'insufficient_quota', 'param': None, 'code': 'credit_balance_exhausted'}}
-13:54:10 FAIL resource_plank_01: Error code: 429 - {'error': {'message': 'You have no credits remaining. Add credits to continue using the API at https://platform.openai.com/settings/organization/billing/.', 'type': 'insufficient_quota', 'param': None, 'code': 'credit_balance_exhausted'}}
-13:54:16 FAIL building_cabin_stage1_01: Error code: 429 - {'error': {'message': 'You have no credits remaining. Add credits to continue using the API at https://platform.openai.com/settings/organization/billing/.', 'type': 'insufficient_quota', 'param': None, 'code': 'credit_balance_exhausted'}}
-13:54:20 FAIL building_cabin_stage2_01: Error code: 429 - {'error': {'message': 'You have no credits remaining. Add credits to continue using the API at https://platform.openai.com/settings/organization/billing/.', 'type': 'insufficient_quota', 'param': None, 'code': 'credit_balance_exhausted'}}
-13:54:25 FAIL building_cabin_finished_01: Error code: 429 - {'error': {'message': 'You have no credits remaining. Add credits to continue using the API at https://platform.openai.com/settings/organization/billing/.', 'type': 'insufficient_quota', 'param': None, 'code': 'credit_balance_exhausted'}}
-13:54:30 FAIL station_butcher_table_01: Error code: 429 - {'error': {'message': 'You have no credits remaining. Add credits to continue using the API at https://platform.openai.com/settings/organization/billing/.', 'type': 'insufficient_quota', 'param': None, 'code': 'credit_balance_exhausted'}}
-13:54:34 FAIL station_meat_grinder_01: Error code: 429 - {'error': {'message': 'You have no credits remaining. Add credits to continue using the API at https://platform.openai.com/settings/organization/billing/.', 'type': 'insufficient_quota', 'param': None, 'code': 'credit_balance_exhausted'}}
-13:54:40 FAIL tile_conveyor_belt_01: Error code: 429 - {'error': {'message': 'You have no credits remaining. Add credits to continue using the API at https://platform.openai.com/settings/organization/billing/.', 'type': 'insufficient_quota', 'param': None, 'code': 'credit_balance_exhausted'}}
-13:54:46 FAIL resource_meat_chunk_01: Error code: 429 - {'error': {'message': 'You have no credits remaining. Add credits to continue using the API at https://platform.openai.com/settings/organization/billing/.', 'type': 'insufficient_quota', 'param': None, 'code': 'credit_balance_exhausted'}}
-13:54:51 FAIL resource_meat_ground_01: Error code: 429 - {'error': {'message': 'You have no credits remaining. Add credits to continue using the API at https://platform.openai.com/settings/organization/billing/.', 'type': 'insufficient_quota', 'param': None, 'code': 'credit_balance_exhausted'}}
-13:54:57 FAIL station_supply_sled_01: Error code: 429 - {'error': {'message': 'You have no credits remaining. Add credits to continue using the API at https://platform.openai.com/settings/organization/billing/.', 'type': 'insufficient_quota', 'param': None, 'code': 'credit_balance_exhausted'}}
-13:55:03 FAIL tile_sled_dock_01: Error code: 429 - {'error': {'message': 'You have no credits remaining. Add credits to continue using the API at https://platform.openai.com/settings/organization/billing/.', 'type': 'insufficient_quota', 'param': None, 'code': 'credit_balance_exhausted'}}
-13:55:08 FAIL building_watchtower_01: Error code: 429 - {'error': {'message': 'You have no credits remaining. Add credits to continue using the API at https://platform.openai.com/settings/organization/billing/.', 'type': 'insufficient_quota', 'param': None, 'code': 'credit_balance_exhausted'}}
-13:55:12 FAIL character_survivor_lookout_01: Error code: 429 - {'error': {'message': 'You have no credits remaining. Add credits to continue using the API at https://platform.openai.com/settings/organization/billing/.', 'type': 'insufficient_quota', 'param': None, 'code': 'credit_balance_exhausted'}}
-13:55:16 FAIL projectile_arrow_01: Error code: 429 - {'error': {'message': 'You have no credits remaining. Add credits to continue using the API at https://platform.openai.com/settings/organization/billing/.', 'type': 'insufficient_quota', 'param': None, 'code': 'credit_balance_exhausted'}}
-13:55:16 done
+2026-11-13 14:26:47 start — 21 assets
+14:27:03 OK station_ice_hole_01 (1496 KB)
+14:27:17 OK tile_pier_plank_01 (1574 KB)
+14:27:31 OK tile_water_frozen_01 (1547 KB)
+14:27:44 OK resource_fish_raw_01 (1449 KB)
+14:27:59 OK station_fish_cleaning_table_01 (1511 KB)
+14:28:12 OK station_cook_pot_01 (1605 KB)
+14:28:25 OK station_lumber_mill_01 (1566 KB)
+14:28:40 OK resource_plank_01 (1460 KB)
+14:28:54 OK building_cabin_stage1_01 (1616 KB)
+14:29:09 OK building_cabin_stage2_01 (1546 KB)
+14:29:27 OK building_cabin_finished_01 (1643 KB)
+14:29:42 OK station_butcher_table_01 (1663 KB)
+14:29:58 OK station_meat_grinder_01 (1575 KB)
+14:30:12 OK tile_conveyor_belt_01 (1549 KB)
+14:30:27 OK resource_meat_chunk_01 (1519 KB)
+14:30:41 OK resource_meat_ground_01 (1512 KB)
+14:30:55 OK station_supply_sled_01 (1587 KB)
+14:31:09 OK tile_sled_dock_01 (1609 KB)
+14:31:24 OK building_watchtower_01 (1595 KB)
+14:31:39 OK character_survivor_lookout_01 (1544 KB)
+14:31:51 OK projectile_arrow_01 (1337 KB)
+14:31:51 done
+14:48:51 OK station_butcher_table_01 (regen, 1506 KB)
+14:49:07 OK station_fish_cleaning_table_01 (regen, 1531 KB)
+14:49:27 OK character_survivor_lookout_01 (regen, 1472 KB)

@@ -65,7 +65,7 @@ def gen(name: str, prompt: str) -> bool:
     try:
         # Image edit with the master as a style reference.
         resp = client.images.edit(
-            model="gpt-image-1",
+            model="gpt-image-1.5",
             image=[("master.png", master_bytes, "image/png")],
             prompt=full_prompt,
             size="1024x1024",
