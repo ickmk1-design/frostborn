@@ -53,6 +53,7 @@ interface Survivor {
   workerStation?: StationInstance | null;
   workerHaulId?: ResourceId | null;    // resource being hauled; null when not hauling
   workerHaulDest?: { kind: 'fire' } | { kind: 'station'; station: StationInstance } | null;
+  carrySprite?: Phaser.GameObjects.Image | null;  // tiny item sprite rendered above head while hauling
   bobOffset: number;
   lx: number; ly: number;
   waddlePhase: number;
@@ -227,6 +228,8 @@ export default class GameScene extends Phaser.Scene {
   private _scratchIso = { ix: 0, iy: 0 };
   private _scratchIso2 = { ix: 0, iy: 0 };
   private animalsKilled = 0;
+  private fishCaught = 0;
+  private cookedServed = 0;
   private goalStages: Array<{type:string; target:number|string; hintText:string; hintTextTr?:string; completedText?:string; completedTextTr?:string}> = [];
   private currentStageIdx = 0;
   private stageBannerMs = 0;
@@ -925,7 +928,7 @@ export default class GameScene extends Phaser.Scene {
         stroke: '#000', strokeThickness: 2,
       }).setOrigin(0.5).setDepth(1200).setVisible(false);
       const inst: StationInstance = {
-        cfg: scfg, sx: sp.x, sy: sp.y, sprite, outputPile: null, pileText,
+        cfg: scfg, sx: sp.x, sy: sp.y, sprite, pileSprites: [], inputPileSprites: [], pileText,
         workerId: -1, cycleMs: 0, priorityBump: scfg.priorityBump ?? 0,
         outputCount: 0, inputCount: 0,
       };
@@ -1021,6 +1024,7 @@ export default class GameScene extends Phaser.Scene {
     this.playerLastDir = 0;
     this.carriedMeat = 0; this.cookQueue = 0; this.cookTimer = 0;
     this.playerAttackMs = 0; this.animalsKilled = 0; this.currentStageIdx = 0;
+    this.fishCaught = 0; this.cookedServed = 0;
     this.playerHp = cfg.player.maxHp ?? 10;
     this.playerHpMax = cfg.player.maxHp ?? 10;
     this.playerDead = false; this.playerDeadMs = 0; this.playerFlashMs = 0;
@@ -1584,7 +1588,7 @@ export default class GameScene extends Phaser.Scene {
 
     // Workers
     for (const sv of this.survivors) {
-      if (sv.state === 'worker') this.updateWorker(sv, dt, delta);
+      if (sv.state === 'worker') { this.updateWorker(sv, dt, delta); this.syncCarrySprite(sv); }
     }
 
     // Camera (needed for depth sort + fire glow below)
@@ -2185,6 +2189,58 @@ export default class GameScene extends Phaser.Scene {
     this.checkWin();
   }
 
+  // Sprite key for a resource item — used for visible piles + carry overlays.
+  private resourceSpriteKey(rid: ResourceId): string {
+    switch (rid) {
+      case 'log':         return 'resource_wood_logs_01';
+      case 'fish_raw':    return 'resource_fish_raw_01';
+      case 'fish_clean':  return 'resource_fish_raw_01';
+      case 'cooked':      return 'resource_fish_raw_01';
+      case 'plank':       return 'resource_plank_01';
+      case 'meat_raw':    return 'resource_meat_chunk_01';
+      case 'meat_ground': return 'resource_meat_ground_01';
+      default:            return '';
+    }
+  }
+
+  // Add a small sprite on the station's pile. Sprites stack diagonally so a
+  // stack of 3-6 is clearly visible like in the reference ads.
+  private pushPileSprite(station: StationInstance, rid: ResourceId, isInput: boolean): void {
+    const key = this.resourceSpriteKey(rid);
+    if (!key || !this.textures.exists(key)) return;
+    const arr = isInput ? (station.inputPileSprites as Phaser.GameObjects.Image[])
+                        : (station.pileSprites as Phaser.GameObjects.Image[]);
+    const idx = arr.length;
+    // Stack: output goes to right of station foot; input goes to left.
+    const side = isInput ? -1 : 1;
+    const dx = side * (28 + (idx % 3) * 6);
+    const dy = -6 - Math.floor(idx / 3) * 10;
+    const sp = this.add.image(station.sx + dx, station.sy + dy, key)
+      .setDisplaySize(26, 26).setOrigin(0.5, 1.0).setDepth(station.sy + 2);
+    arr.push(sp);
+    // Count badge updates for piles > 6 (we only render 6 sprites max to keep perf)
+    if (arr.length > 6) sp.setVisible(false);
+    this.refreshStationPileText(station);
+  }
+
+  private popPileSprite(station: StationInstance, isInput: boolean): void {
+    const arr = isInput ? (station.inputPileSprites as Phaser.GameObjects.Image[])
+                        : (station.pileSprites as Phaser.GameObjects.Image[]);
+    const sp = arr.pop();
+    if (sp) sp.destroy();
+    this.refreshStationPileText(station);
+  }
+
+  private refreshStationPileText(station: StationInstance): void {
+    const tx = station.pileText as Phaser.GameObjects.Text;
+    const total = station.outputCount + station.inputCount;
+    if (total > 6) {
+      tx.setText(`×${total}`).setVisible(true);
+    } else {
+      tx.setVisible(false);
+    }
+  }
+
   // Sprite key for each station kind (pulled from the stations_v1 asset set).
   private stationSpriteKey(kind: StationKind): string {
     switch (kind) {
@@ -2222,10 +2278,40 @@ export default class GameScene extends Phaser.Scene {
     if (rid === 'log') {
       this.fuel = Math.min(cfg.fire.fuelMax, this.fuel + cfg.fire.fuelPerLog);
       this.coins += cfg.fire.coinsPerLog;
-    } else {
-      // Generic: one unit = 5 coins for now (tuning handled per-level later).
-      this.coins += 5;
+    } else if (rid === 'fish_raw' || rid === 'fish_clean') {
+      // L4: counts as fish caught for the stage; L5 funnels through cook_pot
+      // first so "delivery to fire" for a fish typically is cooked food.
+      this.fishCaught += 1;
+      this.coins += 6;
+      this.advanceGoalStage();
+    } else if (rid === 'cooked') {
+      this.cookedServed += 1;
+      this.coins += 10;
       this.fuel = Math.min(cfg.fire.fuelMax, this.fuel + Math.floor(cfg.fire.fuelPerLog / 2));
+      this.advanceGoalStage();
+    } else {
+      // plank, meat_raw/ground etc. that reach the fire as fallback.
+      this.coins += 5;
+    }
+  }
+
+  // Maintain a small item sprite above the worker's head while hauling.
+  // Called from updateWorker each tick AFTER movement has been applied.
+  private syncCarrySprite(w: Survivor): void {
+    const haulId = w.workerHaulId ?? null;
+    if (!haulId) {
+      if (w.carrySprite) { w.carrySprite.destroy(); w.carrySprite = null; }
+      return;
+    }
+    const key = this.resourceSpriteKey(haulId);
+    if (!key || !this.textures.exists(key)) return;
+    if (!w.carrySprite) {
+      w.carrySprite = this.add.image(w.lx, w.ly - CHAR_SIZE - 6, key)
+        .setDisplaySize(22, 22).setOrigin(0.5, 1).setDepth(w.sprite.depth + 20);
+    } else {
+      w.carrySprite.x = w.lx;
+      w.carrySprite.y = w.ly - CHAR_SIZE - 6;
+      w.carrySprite.setDepth(w.sprite.depth + 20);
     }
   }
 
@@ -2324,25 +2410,36 @@ export default class GameScene extends Phaser.Scene {
         // Consumer stations need an input unit before each cycle.
         const needInput = STATION_CONSUMES[st.cfg.kind];
         if (needInput && st.inputCount <= 0) {
-          // No input yet — just wait at the station (idle anim).
           w.activeAnim = 'idle';
           break;
         }
         // Count down the production cycle.
         st.cycleMs = Math.max(0, st.cycleMs - delta);
         if (st.cycleMs <= 0) {
-          // Consume one input (if required) and emit one output.
-          if (needInput) st.inputCount = Math.max(0, st.inputCount - 1);
+          // Consume one input (if required).
+          if (needInput) {
+            st.inputCount = Math.max(0, st.inputCount - 1);
+            this.popPileSprite(st, true);
+          }
           const produces = STATION_PRODUCES[st.cfg.kind];
           if (produces) {
-            // Hand the output to the worker as a haul payload.
-            w.workerHaulId = produces;
-            w.workerHaulDest = this.resolveHaulDest(produces);
-            w.workerState = 'haul';
-            w.activeAnim = 'carry_walk';
-            // Release the station so another worker can clock in.
-            st.workerId = -1;
-            w.workerStation = null;
+            // Build a visible pile. Worker keeps producing up to BATCH_SIZE before hauling.
+            st.outputCount += 1;
+            this.pushPileSprite(st, produces, false);
+            const BATCH = 3;
+            if (st.outputCount >= BATCH) {
+              // Switch to haul: pop one unit, carry it to destination, come back.
+              st.outputCount -= 1;
+              this.popPileSprite(st, false);
+              w.workerHaulId = produces;
+              w.workerHaulDest = this.resolveHaulDest(produces);
+              w.workerState = 'haul';
+              w.activeAnim = 'carry_walk';
+              // Keep station reserved for this worker — they'll come back.
+            } else {
+              // Restart a new cycle so the pile keeps growing until BATCH.
+              st.cycleMs = st.cfg.cycleMs ?? DEFAULT_CYCLE_MS[st.cfg.kind] ?? 4000;
+            }
           } else {
             // No output (e.g. supply_sled payout-only) — just reset.
             st.workerId = -1;
@@ -2364,8 +2461,25 @@ export default class GameScene extends Phaser.Scene {
             this.deliverToFire(w.workerHaulId);
           } else {
             dst.station.inputCount += 1;
+            this.pushPileSprite(dst.station, w.workerHaulId, true);
           }
           w.workerHaulId = null; w.workerHaulDest = null;
+          // If this worker still has a station assigned AND it still has pile, return to haul more.
+          if (w.workerStation && w.workerStation.outputCount > 0) {
+            const st = w.workerStation;
+            const produces = STATION_PRODUCES[st.cfg.kind];
+            if (produces) {
+              st.outputCount -= 1;
+              this.popPileSprite(st, false);
+              w.workerHaulId = produces;
+              w.workerHaulDest = this.resolveHaulDest(produces);
+              w.activeAnim = 'carry_walk';
+              // Stay in haul state (dest already set)
+              break;
+            }
+          }
+          // Otherwise release the station and idle.
+          if (w.workerStation) { w.workerStation.workerId = -1; w.workerStation = null; }
           w.workerState = 'idle';
           w.activeAnim = 'idle';
         } else {
@@ -2676,6 +2790,8 @@ export default class GameScene extends Phaser.Scene {
     if (s.type === 'rescueSurvivors') met = this.rescuedCount >= (s.target as number);
     else if (s.type === 'buildStructure') met = this.tentBuilt;
     else if (s.type === 'huntAnimals') met = this.animalsKilled >= (s.target as number);
+    else if (s.type === 'fishCaught') met = this.fishCaught >= (s.target as number);
+    else if (s.type === 'cookedServed') met = this.cookedServed >= (s.target as number);
     if (met) {
       this.currentStageIdx++;
       const banner = (getLang() === 'tr' && s.completedTextTr) ? s.completedTextTr : s.completedText;

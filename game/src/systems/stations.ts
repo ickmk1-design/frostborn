@@ -52,8 +52,11 @@ export interface StationInstance {
   sx: number;                       // screen x
   sy: number;                       // screen y
   sprite: unknown;                  // Phaser.GameObjects.Image | null — avoid Phaser import in this module
-  outputPile: unknown;              // small text showing buffered count, or null
-  pileText: unknown;                // Phaser.GameObjects.Text showing N
+  // Visible resource piles beside the station — grow as outputCount increases.
+  // Each entry is a small sprite rendered in a diagonal stack at the station's foot.
+  pileSprites: unknown[];           // Phaser.GameObjects.Image[]
+  inputPileSprites: unknown[];      // separate visual for consumer input hopper
+  pileText: unknown;                // Phaser.GameObjects.Text showing N (overlay for piles > 6)
   workerId: number;                 // survivor index (-1 = unmanned)
   cycleMs: number;                  // ms remaining in current cycle; 0 = idle (worker needed to start)
   priorityBump: number;             // user-adjustable; lower = higher priority
