@@ -214,16 +214,16 @@ export default class UIScene extends Phaser.Scene {
       padding: { x: 18, y: 10 },
     }).setOrigin(0.5, 0).setDepth(10);
 
-    // ── 13. FPS text (always on; tiny corner readout) ─────────────────────
-    this.fpsText = this.add.text(W - 5, Math.max(10, this.safeTop + 2), '', {
+    // ── 13. FPS text (debug mode only; top-right, below the HUD bar) ──────
+    this.fpsText = this.add.text(W - 10, SAF + BAR_H + 56, '', {
       fontSize: '11px', color: '#ffff00',
-    }).setOrigin(1, 0).setDepth(13).setVisible(true);
+    }).setOrigin(1, 0).setDepth(13).setVisible(this.isDebugMode);
 
     // ── 14. Joystick graphics ─────────────────────────────────────────────
     this.joyGfx = this.add.graphics().setDepth(13);
 
     // ── 15. "Watch Ad — Refuel" overlay (hidden until freeze starts) ──────
-    this.refuelBtn = this.add.text(CX, H - 48, 'Watch Ad — Refuel', {
+    this.refuelBtn = this.add.text(CX, H - 48, t('watchAdRefuel'), {
       fontFamily: FF, fontSize: '17px', color: '#88ffdd',
       backgroundColor: '#001a14', padding: { x: 18, y: 10 },
       stroke: '#005544', strokeThickness: 1,
@@ -261,8 +261,11 @@ export default class UIScene extends Phaser.Scene {
       gs.scene.start('ShopScene', { from: 'LevelSelectScene' });
     });
 
-    // ── 17. Level badge (small text under HUD bar, near pause button) ────────
-    this.levelBadge = this.add.text(W - 54, SAF + BAR_H + 4, '', {
+    // ── 17. Level badge (right-side, below the pause button, clear of banner) ─
+    // Pause button lives inside the HUD at CTR_Y with radius 18. The goal/build
+    // banner is centred below the HUD (BANNER_Y → BANNER_Y + ~24px). Place the
+    // badge below both so it never clips the banner's rounded corner.
+    this.levelBadge = this.add.text(W - 10, SAF + BAR_H + 36, '', {
       fontFamily: FF, fontSize: '11px', color: '#aabbcc',
       stroke: '#000', strokeThickness: 2,
     }).setOrigin(1, 0).setAlpha(0.7).setDepth(13);
@@ -347,7 +350,6 @@ export default class UIScene extends Phaser.Scene {
       const bg = this.add.graphics().setDepth(902);
       bg.fillStyle(0x4a2810, 1).fillRoundedRect(CX - btnW / 2, cy - btnH / 2, btnW, btnH, 10);
       bg.lineStyle(2, 0xd48030, 1).strokeRoundedRect(CX - btnW / 2, cy - btnH / 2, btnW, btnH, 10);
-      bg.fillStyle(0xddeeff, 0.60).fillRoundedRect(CX - btnW / 2 + 4, cy - btnH / 2 + 1, btnW - 8, 6, 3);
       const lbl = this.add.text(CX, cy + 1, t(item.key as Parameters<typeof t>[0]), {
         fontFamily: FF, fontSize: '18px', fontStyle: 'bold',
         color: '#fff4de', stroke: '#3a1a06', strokeThickness: 3,
@@ -440,7 +442,7 @@ export default class UIScene extends Phaser.Scene {
 
     // Hint + FPS
     this.hintTextObj.setText(data.hintText).setAlpha(data.hintAlpha);
-    this.fpsText.setText(`${data.fps} fps`);
+    if (this.isDebugMode) this.fpsText.setText(`${data.fps} fps`);
 
     // Joystick
     this.joyGfx.clear();

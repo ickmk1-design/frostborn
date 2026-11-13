@@ -23,10 +23,19 @@ const _IGNORE_PATTERNS = [
   /audio device/i,
   /notallowederror/i,   // audio autoplay policy
   /the play\(\) request was interrupted/i,
+  /^script error\.?$/i, // Safari cross-origin stub — no actionable info, don't bother user
 ];
 
 function _isFatal(msg: string): boolean {
   return !_IGNORE_PATTERNS.some(p => p.test(msg));
+}
+
+// Error overlay only in debug mode — users shouldn't see a red banner in production.
+function _debugEnabled(): boolean {
+  try {
+    if (typeof window === 'undefined') return false;
+    return window.location.search.includes('debug') || localStorage.getItem('fb_debug') === '1';
+  } catch { return false; }
 }
 
 // ── Small dismissible banner (never full-screen) ──────────────────────────────
@@ -71,9 +80,11 @@ function _logToServer(data: Record<string, unknown>): void {
 }
 
 window.onerror = (msg, src, line, col, err) => {
-  const text = `[onerror] ${msg}\n${src}:${line}:${col}`;
-  _logToServer({ type: 'onerror', msg: String(msg), src, line, col, stack: err?.stack });
-  if (_isFatal(String(msg))) _showErrorBanner(text);
+  const m = String(msg);
+  // Ignore the Safari cross-origin stub entirely — no log, no banner.
+  if (/^script error\.?$/i.test(m)) return false;
+  _logToServer({ type: 'onerror', msg: m, src, line, col, stack: err?.stack });
+  if (_debugEnabled() && _isFatal(m)) _showErrorBanner(`[onerror] ${m}\n${src}:${line}:${col}`);
   return false;
 };
 
@@ -81,8 +92,9 @@ window.addEventListener('unhandledrejection', (e) => {
   const reason = e.reason;
   const msg = String(reason?.message ?? reason);
   const stack = reason?.stack ?? '';
+  if (/^script error\.?$/i.test(msg)) { e.preventDefault(); return; }
   _logToServer({ type: 'unhandledrejection', msg, stack });
-  if (_isFatal(msg)) _showErrorBanner(`[unhandledrejection] ${msg}`);
+  if (_debugEnabled() && _isFatal(msg)) _showErrorBanner(`[unhandledrejection] ${msg}`);
   // Prevent the browser from logging it to console as uncaught
   e.preventDefault();
 });

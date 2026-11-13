@@ -292,9 +292,11 @@ export default class ShopScene extends Phaser.Scene {
       cont.add(iconImg);
     }
 
-    // Text area
+    // Text area — reserve the real price-button footprint (cardW * 0.26 + margin + gap)
+    // so neither label nor description can slide under the button on wide labels.
     const textX   = x + 14 + iconSize + 10;
-    const availW  = cardW - (14 + iconSize + 10) - 10 - (owned ? 70 : 90);
+    const priceBtnReserve = Math.round(cardW * 0.26) + 24; // btn width + right margin + text gap
+    const availW  = Math.max(80, cardW - (14 + iconSize + 10) - priceBtnReserve);
     const labelFS = isFeat ? Math.round(cardH * 0.16) : Math.round(cardH * 0.24);
     const descFS  = Math.round(cardH * 0.15);
 
@@ -304,7 +306,7 @@ export default class ShopScene extends Phaser.Scene {
     const lbl = this.add.text(textX, labelY, item.label, {
       fontFamily: FF, fontSize: `${labelFS}px`, fontStyle: 'bold',
       color: owned ? '#88ee88' : isFeat ? '#ffe8b0' : '#d8f0ff',
-      ...(isFeat ? {} : { wordWrap: { width: availW } }),
+      wordWrap: { width: availW },
     }).setOrigin(0, 0.5);
 
     const desc = this.add.text(textX, descY, item.desc, {

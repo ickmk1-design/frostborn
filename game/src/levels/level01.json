@@ -5,7 +5,10 @@
   "originX": 195,
   "originY": 152,
   "player": {
-    "startIso": [8, 6],
+    "startIso": [
+      8,
+      6
+    ],
     "speedPx": 130,
     "carryCapacity": 4,
     "collectRangePx": 90,
@@ -13,7 +16,10 @@
     "collectIntervalMs": 1400
   },
   "fire": {
-    "iso": [8, 7],
+    "iso": [
+      8,
+      7
+    ],
     "fuelMax": 100,
     "fuelDrainPerSec": 3.5,
     "fuelPerLog": 20,
@@ -22,15 +28,33 @@
     "freezeMax": 100
   },
   "trees": [
-    { "iso": [5, 4] },
-    { "iso": [11, 4] },
-    { "iso": [5, 10] }
+    {
+      "iso": [
+        5,
+        4
+      ]
+    },
+    {
+      "iso": [
+        11,
+        4
+      ]
+    },
+    {
+      "iso": [
+        5,
+        10
+      ]
+    }
   ],
   "treeLogCooldownMs": 4500,
   "buildPads": [
     {
       "id": "tent",
-      "iso": [11, 10],
+      "iso": [
+        11,
+        10
+      ],
       "asset": "building_tent_canvas_01",
       "costCoins": 65,
       "payRateCoinsPerSec": 12,
@@ -38,9 +62,24 @@
     }
   ],
   "frozenSurvivors": [
-    { "iso": [8, 20] },
-    { "iso": [6, 21] },
-    { "iso": [10, 21] }
+    {
+      "iso": [
+        8,
+        20
+      ]
+    },
+    {
+      "iso": [
+        6,
+        21
+      ]
+    },
+    {
+      "iso": [
+        10,
+        21
+      ]
+    }
   ],
   "survivorFollowRangePx": 90,
   "survivorThawRangePx": 120,
@@ -48,64 +87,459 @@
   "workerChopIntervalMs": 4000,
   "workerWalkSpeed": 90,
   "walls": [
-    [3,3],[4,3],[5,3],[6,3],[7,3],[8,3],[9,3],[10,3],[11,3],[12,3],[13,3],
-    [3,4],[3,5],[3,6],[3,7],[3,8],[3,9],[3,10],[3,11],[3,12],
-    [13,4],[13,5],[13,6],[13,7],[13,8],[13,9],[13,10],[13,11],[13,12],
-    [4,12],[5,12],[6,12],[7,12],[10,12],[11,12],[12,12],[13,12]
+    [
+      3,
+      3
+    ],
+    [
+      4,
+      3
+    ],
+    [
+      5,
+      3
+    ],
+    [
+      6,
+      3
+    ],
+    [
+      7,
+      3
+    ],
+    [
+      8,
+      3
+    ],
+    [
+      9,
+      3
+    ],
+    [
+      10,
+      3
+    ],
+    [
+      11,
+      3
+    ],
+    [
+      12,
+      3
+    ],
+    [
+      13,
+      3
+    ],
+    [
+      3,
+      4
+    ],
+    [
+      3,
+      5
+    ],
+    [
+      3,
+      6
+    ],
+    [
+      3,
+      7
+    ],
+    [
+      3,
+      8
+    ],
+    [
+      3,
+      9
+    ],
+    [
+      3,
+      10
+    ],
+    [
+      3,
+      11
+    ],
+    [
+      3,
+      12
+    ],
+    [
+      13,
+      4
+    ],
+    [
+      13,
+      5
+    ],
+    [
+      13,
+      6
+    ],
+    [
+      13,
+      7
+    ],
+    [
+      13,
+      8
+    ],
+    [
+      13,
+      9
+    ],
+    [
+      13,
+      10
+    ],
+    [
+      13,
+      11
+    ],
+    [
+      13,
+      12
+    ],
+    [
+      4,
+      12
+    ],
+    [
+      5,
+      12
+    ],
+    [
+      6,
+      12
+    ],
+    [
+      7,
+      12
+    ],
+    [
+      10,
+      12
+    ],
+    [
+      11,
+      12
+    ],
+    [
+      12,
+      12
+    ],
+    [
+      13,
+      12
+    ]
   ],
-  "gate": [[8,12],[9,12]],
-  "goal": { "survivorsToRescue": 3 },
+  "gate": [
+    [
+      8,
+      12
+    ],
+    [
+      9,
+      12
+    ]
+  ],
+  "goal": {
+    "survivorsToRescue": 3
+  },
   "stages": [
-    { "type": "rescueSurvivors", "target": 1, "hintText": "Walk up to a frozen survivor!", "hintTextTr": "Donmuş kişiye git!", "completedText": "Survivor found! Now build the tent." },
-    { "type": "buildStructure",  "target": "tent", "hintText": "Build the tent  65\uD83E\uDE99", "hintTextTr": "Çadır kur  65\uD83E\uDE99", "completedText": "Tent built! Rescue more survivors." },
-    { "type": "rescueSurvivors", "target": 3, "hintText": "Rescue 2 more survivors", "hintTextTr": "2 kişi daha kurtar" }
+    {
+      "type": "rescueSurvivors",
+      "target": 1,
+      "hintText": "Walk up to a frozen survivor!",
+      "hintTextTr": "Donmuş kişiye git!",
+      "completedText": "Survivor found! Now build the tent.",
+      "completedTextTr": "Bulundu! Şimdi çadır kur."
+    },
+    {
+      "type": "buildStructure",
+      "target": "tent",
+      "hintText": "Build the tent  65🪙",
+      "hintTextTr": "Çadır kur  65🪙",
+      "completedText": "Tent built! Rescue more survivors.",
+      "completedTextTr": "Çadır hazır! Daha fazla kişi kurtar."
+    },
+    {
+      "type": "rescueSurvivors",
+      "target": 3,
+      "hintText": "Rescue 2 more survivors",
+      "hintTextTr": "2 kişi daha kurtar"
+    }
   ],
   "hintDurationSec": 30,
   "decor": [
-    { "key": "prop_snow_pine_tree_01",    "iso": [2,  1] },
-    { "key": "prop_snow_pine_tree_01",    "iso": [4,  1] },
-    { "key": "prop_snow_pine_tree_01",    "iso": [6,  1] },
-    { "key": "prop_snow_pine_tree_01",    "iso": [8,  1] },
-    { "key": "prop_snow_pine_tree_01",    "iso": [10, 1] },
-    { "key": "prop_snow_pine_tree_01",    "iso": [12, 1] },
-    { "key": "prop_frozen_tree_dead_01",  "iso": [3,  2] },
-    { "key": "prop_frozen_tree_dead_01",  "iso": [9,  2] },
-
-    { "key": "prop_snow_pine_tree_01",    "iso": [1,  5] },
-    { "key": "prop_snow_pine_tree_01",    "iso": [1,  8] },
-    { "key": "prop_snow_pine_tree_01",    "iso": [1, 11] },
-    { "key": "prop_frozen_tree_dead_01",  "iso": [2,  6] },
-
-    { "key": "prop_snow_pine_tree_01",    "iso": [15, 5] },
-    { "key": "prop_snow_pine_tree_01",    "iso": [15, 8] },
-    { "key": "prop_snow_pine_tree_01",    "iso": [15,11] },
-    { "key": "prop_frozen_tree_dead_01",  "iso": [14, 6] },
-
-    { "key": "prop_igloo_01",             "iso": [15, 2] },
-
-    { "key": "prop_rock_cluster_01",      "iso": [0,  7] },
-    { "key": "prop_rock_cluster_01",      "iso": [16, 7] },
-    { "key": "prop_snow_bush_01",         "iso": [0,  4] },
-    { "key": "prop_snow_bush_01",         "iso": [0, 10] },
-    { "key": "prop_snow_bush_01",         "iso": [16, 4] },
-
-    { "key": "prop_barrel_01",            "iso": [5,  5] },
-    { "key": "prop_barrel_01",            "iso": [11, 5] },
-    { "key": "building_storage_crate_stacks", "iso": [5, 11] },
-    { "key": "resource_wood_logs_01",     "iso": [7,  8] },
-    { "key": "prop_bench_01",             "iso": [5,  9] },
-    { "key": "prop_bench_01",             "iso": [3,  8] },
-    { "key": "prop_lantern_post_01",      "iso": [5,  6] },
-    { "key": "prop_lantern_post_01",      "iso": [11, 6] },
-
-    { "key": "prop_snow_pine_tree_01",    "iso": [4, 14] },
-    { "key": "prop_snow_pine_tree_01",    "iso": [12,14] },
-    { "key": "tile_snow_drift_mound_01",  "iso": [6, 14] },
-    { "key": "tile_snow_drift_mound_01",  "iso": [10,14] },
-    { "key": "prop_cliff_edge_01",        "iso": [4, 16] },
-    { "key": "prop_cliff_edge_01",        "iso": [12,16] },
-
-    { "key": "prop_lantern_post_01",      "iso": [7, 13] },
-    { "key": "prop_lantern_post_01",      "iso": [11,13] }
+    {
+      "key": "prop_snow_pine_tree_01",
+      "iso": [
+        2,
+        1
+      ]
+    },
+    {
+      "key": "prop_snow_pine_tree_01",
+      "iso": [
+        4,
+        1
+      ]
+    },
+    {
+      "key": "prop_snow_pine_tree_01",
+      "iso": [
+        6,
+        1
+      ]
+    },
+    {
+      "key": "prop_snow_pine_tree_01",
+      "iso": [
+        8,
+        1
+      ]
+    },
+    {
+      "key": "prop_snow_pine_tree_01",
+      "iso": [
+        10,
+        1
+      ]
+    },
+    {
+      "key": "prop_snow_pine_tree_01",
+      "iso": [
+        12,
+        1
+      ]
+    },
+    {
+      "key": "prop_frozen_tree_dead_01",
+      "iso": [
+        3,
+        2
+      ]
+    },
+    {
+      "key": "prop_frozen_tree_dead_01",
+      "iso": [
+        9,
+        2
+      ]
+    },
+    {
+      "key": "prop_snow_pine_tree_01",
+      "iso": [
+        1,
+        5
+      ]
+    },
+    {
+      "key": "prop_snow_pine_tree_01",
+      "iso": [
+        1,
+        8
+      ]
+    },
+    {
+      "key": "prop_snow_pine_tree_01",
+      "iso": [
+        1,
+        11
+      ]
+    },
+    {
+      "key": "prop_frozen_tree_dead_01",
+      "iso": [
+        2,
+        6
+      ]
+    },
+    {
+      "key": "prop_snow_pine_tree_01",
+      "iso": [
+        15,
+        5
+      ]
+    },
+    {
+      "key": "prop_snow_pine_tree_01",
+      "iso": [
+        15,
+        8
+      ]
+    },
+    {
+      "key": "prop_snow_pine_tree_01",
+      "iso": [
+        15,
+        11
+      ]
+    },
+    {
+      "key": "prop_frozen_tree_dead_01",
+      "iso": [
+        14,
+        6
+      ]
+    },
+    {
+      "key": "prop_igloo_01",
+      "iso": [
+        15,
+        2
+      ]
+    },
+    {
+      "key": "prop_rock_cluster_01",
+      "iso": [
+        0,
+        7
+      ]
+    },
+    {
+      "key": "prop_rock_cluster_01",
+      "iso": [
+        16,
+        7
+      ]
+    },
+    {
+      "key": "prop_snow_bush_01",
+      "iso": [
+        0,
+        4
+      ]
+    },
+    {
+      "key": "prop_snow_bush_01",
+      "iso": [
+        0,
+        10
+      ]
+    },
+    {
+      "key": "prop_snow_bush_01",
+      "iso": [
+        16,
+        4
+      ]
+    },
+    {
+      "key": "prop_barrel_01",
+      "iso": [
+        5,
+        5
+      ]
+    },
+    {
+      "key": "prop_barrel_01",
+      "iso": [
+        11,
+        5
+      ]
+    },
+    {
+      "key": "building_storage_crate_stacks",
+      "iso": [
+        5,
+        11
+      ]
+    },
+    {
+      "key": "resource_wood_logs_01",
+      "iso": [
+        7,
+        8
+      ]
+    },
+    {
+      "key": "prop_bench_01",
+      "iso": [
+        5,
+        9
+      ]
+    },
+    {
+      "key": "prop_bench_01",
+      "iso": [
+        3,
+        8
+      ]
+    },
+    {
+      "key": "prop_lantern_post_01",
+      "iso": [
+        5,
+        6
+      ]
+    },
+    {
+      "key": "prop_lantern_post_01",
+      "iso": [
+        11,
+        6
+      ]
+    },
+    {
+      "key": "prop_snow_pine_tree_01",
+      "iso": [
+        4,
+        14
+      ]
+    },
+    {
+      "key": "prop_snow_pine_tree_01",
+      "iso": [
+        12,
+        14
+      ]
+    },
+    {
+      "key": "tile_snow_drift_mound_01",
+      "iso": [
+        6,
+        14
+      ]
+    },
+    {
+      "key": "tile_snow_drift_mound_01",
+      "iso": [
+        10,
+        14
+      ]
+    },
+    {
+      "key": "prop_cliff_edge_01",
+      "iso": [
+        4,
+        16
+      ]
+    },
+    {
+      "key": "prop_cliff_edge_01",
+      "iso": [
+        12,
+        16
+      ]
+    },
+    {
+      "key": "prop_lantern_post_01",
+      "iso": [
+        7,
+        13
+      ]
+    },
+    {
+      "key": "prop_lantern_post_01",
+      "iso": [
+        11,
+        13
+      ]
+    }
   ]
 }

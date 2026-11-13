@@ -209,7 +209,7 @@ export default class GameScene extends Phaser.Scene {
   private _scratchIso = { ix: 0, iy: 0 };
   private _scratchIso2 = { ix: 0, iy: 0 };
   private animalsKilled = 0;
-  private goalStages: Array<{type:string; target:number|string; hintText:string; hintTextTr?:string; completedText?:string}> = [];
+  private goalStages: Array<{type:string; target:number|string; hintText:string; hintTextTr?:string; completedText?:string; completedTextTr?:string}> = [];
   private currentStageIdx = 0;
   private stageBannerMs = 0;
   private stageBannerText = '';
@@ -2323,8 +2323,9 @@ export default class GameScene extends Phaser.Scene {
     else if (s.type === 'huntAnimals') met = this.animalsKilled >= (s.target as number);
     if (met) {
       this.currentStageIdx++;
-      if (s.completedText) {
-        this.stageBannerText = s.completedText;
+      const banner = (getLang() === 'tr' && s.completedTextTr) ? s.completedTextTr : s.completedText;
+      if (banner) {
+        this.stageBannerText = banner;
         this.stageBannerMs = 2500;
       }
       this.checkWin();

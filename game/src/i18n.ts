@@ -79,6 +79,8 @@ const strings = {
     comingSoonNotify: 'Notify me when new levels arrive',
     comingSoonNotified: 'You will be notified!',
     comingSoonBlocked: 'Notifications are blocked',
+    menuSubtitle: 'Last Camp',
+    watchAdRefuel: 'Watch Ad — Refuel',
   },
   tr: {
     play: 'Oyna',
@@ -154,6 +156,8 @@ const strings = {
     comingSoonNotify: 'Yeni bölümler çıkınca haber ver',
     comingSoonNotified: 'Haberdar edileceksin!',
     comingSoonBlocked: 'Bildirimler engellenmiş',
+    menuSubtitle: 'Son Kamp',
+    watchAdRefuel: 'Reklam İzle — Yakıt Al',
   },
 } as const;
 

@@ -137,7 +137,7 @@ export default class MainMenuScene extends Phaser.Scene {
       shadow: { offsetX: 0, offsetY: 2, color: '#4499ff', blur: 12, fill: true },
     }).setOrigin(0.5).setDepth(10);
 
-    const subTxt = this.add.text(CX, logoY + logoFS * 1.15, 'Last Camp', {
+    const subTxt = this.add.text(CX, logoY + logoFS * 1.15, t('menuSubtitle'), {
       fontFamily: FF, fontSize: `${Math.round(logoFS * 0.50)}px`, fontStyle: 'bold',
       color: '#ffcc55', stroke: '#5a2800', strokeThickness: 3,
       shadow: { offsetX: 0, offsetY: 2, color: '#ff8800', blur: 8, fill: true },
@@ -174,17 +174,13 @@ export default class MainMenuScene extends Phaser.Scene {
       bgGfx.lineStyle(1.5, 0xffdda0, 0.22);
       bgGfx.strokeRoundedRect(-w / 2 + 2, -h / 2 + 2, w - 4, h - 4, r - 1);
 
-      const snow = this.add.graphics();
-      snow.fillStyle(0xddeeff, 0.78);
-      snow.fillRoundedRect(-w / 2 + 5, -h / 2 - 4, w - 10, 8, 4);
-
       const fs  = primary ? Math.round(h * 0.47) : Math.round(h * 0.42);
       const lbl = this.add.text(0, 1, label, {
         fontFamily: FF, fontSize: `${fs}px`, fontStyle: 'bold',
         color: '#fff4de', stroke: '#3a1a06', strokeThickness: 3,
       }).setOrigin(0.5);
 
-      cont.add([shadow, bgGfx, snow, lbl]);
+      cont.add([shadow, bgGfx, lbl]);
 
       const zone = this.add.rectangle(cx, cy, w, h, 0, 0)
         .setInteractive({ useHandCursor: true })
@@ -254,8 +250,10 @@ export default class MainMenuScene extends Phaser.Scene {
       bgGfx.strokeRoundedRect(-endW / 2 + 2, -endH / 2 + 2, endW - 4, endH - 4, r - 1);
 
       const titleColor = unlocked ? '#d8f4ff' : '#555566';
-      const title = this.add.text(0, unlocked ? -8 : 0, t('endlessTitle'), {
-        fontFamily: FF, fontSize: `${Math.round(endH * 0.38)}px`, fontStyle: 'bold',
+      // Shift title up so the two-line layout (title + subtitle) sits centred
+      // inside the button, whether locked or unlocked.
+      const title = this.add.text(0, -Math.round(endH * 0.14), t('endlessTitle'), {
+        fontFamily: FF, fontSize: `${Math.round(endH * 0.36)}px`, fontStyle: 'bold',
         color: titleColor, stroke: '#001a2a', strokeThickness: 3,
       }).setOrigin(0.5);
 
@@ -302,8 +300,12 @@ export default class MainMenuScene extends Phaser.Scene {
       this.time.delayedCall(230, () => this.scene.start('EndlessScene'));
     });
 
-    this.add.text(CX, H - safeT - 8, 'v1.0', {
+    // Pin the version text to the bottom of the screen, well clear of the Endless
+    // button (which may be locked and show a subtitle line inside). 20px minimum gap.
+    const endlessBottom = endY + endH / 2;
+    const versionY = Math.max(endlessBottom + 20, H - safeT - 8);
+    this.add.text(CX, versionY, 'v1.0', {
       fontFamily: FF, fontSize: '12px', color: '#3a4f66',
-    }).setOrigin(0.5).setDepth(10);
+    }).setOrigin(0.5, 1).setDepth(10);
   }
 }
