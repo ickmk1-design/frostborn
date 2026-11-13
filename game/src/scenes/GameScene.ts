@@ -28,7 +28,7 @@ let cfg: any = level01;
 
 import { readStationsFromCfg, type StationConfig, type StationInstance } from '../systems/stations';
 
-type WorkerState = 'idle' | 'toTree' | 'chopping' | 'toFire';
+type WorkerState = 'idle' | 'toTree' | 'chopping' | 'toFire' | 'fleeing';
 
 interface TreeNode { sprite: Phaser.GameObjects.Image; onCooldown: boolean; }
 
@@ -85,6 +85,9 @@ interface AnimalEntity {
   circleDir: number;
   stateTimer: number;
   lungeTargetX: number; lungeTargetY: number;
+  // Wave 4 — "Wolves at the Lake": wolves can target workers at stations as
+  // well as the player. -1 = player, >=0 = index into this.survivors.
+  huntTargetIdx: number;
   spec: {
     hp: number; speed: number; aggroSpeed: number;
     aggroRange: number; circleDistancePx: number;
@@ -303,9 +306,27 @@ export default class GameScene extends Phaser.Scene {
       this.load.multiatlas('wolf', 'assets/sprites/wolf/atlas.json', 'assets/sprites/wolf/');
     if (!this.textures.exists('deer'))
       this.load.multiatlas('deer', 'assets/sprites/deer/atlas.json', 'assets/sprites/deer/');
+    if (!this.textures.exists('stag'))
+      this.load.multiatlas('stag', 'assets/sprites/stag/atlas.json', 'assets/sprites/stag/');
 
     for (const k of ['prop_rock_cluster_01', 'prop_snow_bush_01', 'prop_cliff_edge_01', 'prop_lantern_post_01']) {
       if (!this.textures.exists(k)) this.load.image(k, `assets/${k}.webp`);
+    }
+
+    // Wave 1-2 station assets (21 PNGs — PNG not WebP for alpha fidelity).
+    const STATION_ASSETS = [
+      'station_ice_hole_01', 'tile_pier_plank_01', 'tile_water_frozen_01',
+      'resource_fish_raw_01', 'station_fish_cleaning_table_01', 'station_cook_pot_01',
+      'station_lumber_mill_01', 'resource_plank_01',
+      'building_cabin_stage1_01', 'building_cabin_stage2_01', 'building_cabin_finished_01',
+      'station_butcher_table_01', 'station_meat_grinder_01', 'tile_conveyor_belt_01',
+      'resource_meat_chunk_01', 'resource_meat_ground_01',
+      'station_supply_sled_01', 'tile_sled_dock_01',
+      'character_survivor_lookout_01', 'projectile_arrow_01',
+    ];
+    for (const k of STATION_ASSETS) {
+      if (!this.textures.exists(k))
+        this.load.image(k, `assets/sprites/stations_v1/${k}.png`);
     }
 
     const noAudio = new URLSearchParams(window.location.search).has('noaudio');
@@ -858,12 +879,17 @@ export default class GameScene extends Phaser.Scene {
           targetLx: pos.x, targetLy: pos.y,
           roamChangeMs: 0, hitFlashMs: 0, deathMs: 0, respawnMs: 0,
           spawnLx: pos.x, spawnLy: pos.y, biteMs: 0, fleeMs: 0,
-          circleAngle: Math.random() * Math.PI * 2, circleDir: Math.random() > 0.5 ? 1 : -1, stateTimer: 0, lungeTargetX: 0, lungeTargetY: 0,
+          circleAngle: Math.random() * Math.PI * 2, circleDir: Math.random() > 0.5 ? 1 : -1, stateTimer: 0, lungeTargetX: 0, lungeTargetY: 0, huntTargetIdx: -1,
           spec,
         };
         this.pickRoamTarget(animal);
         this.animals.push(animal);
       }
+    }
+
+    // ── Dev: `?spawnTest=stag` spawns a stag near the player for preflight dir checks ─
+    if (typeof window !== 'undefined' && window.location.search.includes('spawnTest=stag')) {
+      this._spawnTestAnimal('stag', 120, 80);
     }
 
     // Goal stages from level config
@@ -1741,13 +1767,31 @@ export default class GameScene extends Phaser.Scene {
         const ax = a.targetLx - a.lx; const ay = a.targetLy - a.ly;
         const ad2 = ax*ax + ay*ay;
         if (ad2 > 64) { const ad=Math.sqrt(ad2); a.lx+=(ax/ad)*a.spec.speed*dt; a.ly+=(ay/ad)*a.spec.speed*dt; }
-        if (distToPlayer < a.spec.aggroRange) {
-          // Charge on sight — skip the leisurely orbit and commit to a windup+lunge
-          // immediately. Previously wolves orbited for 0.8-2s before engaging, which
-          // felt passive once the player stepped out of the camp.
+        // Pick the closest viable target (player or a worker outside the fire ring).
+        // Workers get hunted when wolves can reach them, breaking production chains
+        // until the hero clears the wolves — "Wolves at the Lake" (Wave 4).
+        let bestTx = this.playerLX, bestTy = this.playerLY, bestIdx = -1;
+        let bestD2 = (this.playerLX - a.lx)**2 + (this.playerLY - a.ly)**2;
+        for (let wi = 0; wi < this.survivors.length; wi++) {
+          const w = this.survivors[wi];
+          if (w.state !== 'worker') continue;
+          if (w.workerState === 'fleeing') continue;
+          // Don't hunt workers already at the fire (safe zone, radius ~85 px).
+          const fdx = w.lx - this.fireX, fdy = w.ly - this.fireY;
+          if (fdx*fdx + fdy*fdy < 85*85) continue;
+          const d2 = (w.lx - a.lx)**2 + (w.ly - a.ly)**2;
+          if (d2 < bestD2 && d2 < (a.spec.aggroRange * 1.2)**2) {
+            bestD2 = d2; bestTx = w.lx; bestTy = w.ly; bestIdx = wi;
+          }
+        }
+        if (bestD2 < a.spec.aggroRange * a.spec.aggroRange) {
+          // Charge on sight — skip the leisurely orbit and commit to windup+lunge.
           a.state = 'windup';
           a.stateTimer = a.spec.windupMs;
-          a.lungeTargetX = this.playerLX; a.lungeTargetY = this.playerLY;
+          a.lungeTargetX = bestTx; a.lungeTargetY = bestTy;
+          a.huntTargetIdx = bestIdx;
+          // Trigger flee on the targeted worker.
+          if (bestIdx >= 0) this.survivors[bestIdx].workerState = 'fleeing';
         }
       }
 
@@ -2104,6 +2148,34 @@ export default class GameScene extends Phaser.Scene {
     const prevLxW = w.lx; const prevLyW = w.ly;
 
     switch (w.workerState) {
+      case 'fleeing': {
+        // Sprint to the fire; return to idle once inside the safe ring.
+        const dxF = this.fireX - w.lx; const dyF = this.fireY - w.ly;
+        const dF = Math.sqrt(dxF*dxF + dyF*dyF);
+        if (dF > 55) {
+          const fleeSpeed = cfg.workerWalkSpeed * WORKER_SPEED_MULT * 1.5;
+          w.lx += (dxF / dF) * fleeSpeed * dt;
+          w.ly += (dyF / dF) * fleeSpeed * dt;
+          // Face the fire while running to it
+          const toFireDir = this.velToDir(dxF, dyF);
+          if (toFireDir >= 0) w.lastDir = toFireDir;
+          w.activeAnim = 'walk';
+          this.applyCharWaddle(w, dt, true);
+        } else {
+          // Safe at fire — go idle if no active hunter remaining
+          const wi = this.survivors.indexOf(w);
+          const stillHunted = this.animals.some(a =>
+            a.state !== 'dead' && a.state !== 'flee' &&
+            a.huntTargetIdx === wi
+          );
+          if (!stillHunted) w.workerState = 'idle';
+        }
+        // Still apply obstacle constraints
+        const soCo = this.constrainToObstacles(w.lx, w.ly);
+        const soWc = this.wallConstrain(prevLxW, prevLyW, soCo.x, soCo.y);
+        w.lx = soWc.x; w.ly = soWc.y;
+        return; // skip other case movement
+      }
       case 'idle': {
         // Cycle through ALL trees to find one not on cooldown.
         // Fix: previously used a fixed treeIndex which could point to an always-on-cooldown tree
@@ -2344,6 +2416,35 @@ export default class GameScene extends Phaser.Scene {
     this.textures.addCanvas('wolfeyeglow', c);
   }
 
+  // Dev-only helper: spawn a single harmless animal at (player + ox, player + oy).
+  // Used by preflight's direction test for atlases that don't appear in any level yet.
+  private _spawnTestAnimal(atlasKey: string, ox: number, oy: number): void {
+    if (!this.textures.exists(atlasKey)) return;
+    const sx = this.playerLX + ox; const sy = this.playerLY + oy;
+    const sp = this.add.sprite(sx, sy, atlasKey, `${atlasKey}_walk_d0_f0`)
+      .setDisplaySize(140, 140).setOrigin(0.5, 1.0);
+    this.depthGroup.push(sp);
+    const shadow = this.add.image(sx, sy, 'entity_shadow').setDisplaySize(60, 22).setDepth(2);
+    const spec = { hp:9999, speed:0, aggroSpeed:0, aggroRange:0, circleDistancePx:140,
+      attackRange:0, attackIntervalMs:1200, biteIntervalMs:1200, biteDamage:0, knockbackPx:0,
+      meatDrop:0, meatPerHit:0, respawnDelaySec:999, fleeBelowHpPct:0, fleeTimeSec:0,
+      windupMs:0, lungeSpeedPx:0, backoffDistPx:0, backoffSpeedPx:0 };
+    const a: AnimalEntity = {
+      sprite: sp, shadow, atlasKey, baseTint: 0xffffff, isBoss: false,
+      eyeGlow: undefined, summonedMinions: false, displaySize: 140,
+      hp: spec.hp, maxHp: spec.hp, dir: 0,
+      lx: sx, ly: sy, state: 'roam',
+      bobPhase: 0, roamCenterX: sx, roamCenterY: sy, roamRadius: 40,
+      targetLx: sx, targetLy: sy,
+      roamChangeMs: 99999, hitFlashMs: 0, deathMs: 0, respawnMs: 0,
+      spawnLx: sx, spawnLy: sy, biteMs: 0, fleeMs: 0,
+      circleAngle: 0, circleDir: 1, stateTimer: 0,
+      lungeTargetX: 0, lungeTargetY: 0, huntTargetIdx: -1, spec,
+    };
+    this.animals.push(a);
+    (window as unknown as { __testStag?: AnimalEntity }).__testStag = a;
+  }
+
   private summonWolves(alpha: AnimalEntity, count: number): void {
     const wolfSpec = { ...((cfg as any).animalConfig?.wolf ?? {}), respawnDelaySec: 999 };
     const defaultSpec = { hp:3, speed:60, aggroSpeed:95, aggroRange:110, circleDistancePx:125, attackRange:88, attackIntervalMs:1300, biteIntervalMs:1200, biteDamage:1, knockbackPx:140, meatDrop:0, meatPerHit:0, respawnDelaySec:999, fleeBelowHpPct:0.4, fleeTimeSec:4, windupMs:380, lungeSpeedPx:340, backoffDistPx:155, backoffSpeedPx:210 };
@@ -2377,7 +2478,7 @@ export default class GameScene extends Phaser.Scene {
         spawnLx: sx, spawnLy: sy, biteMs: 0, fleeMs: 0,
         circleAngle: angle, circleDir: i % 2 === 0 ? 1 : -1,
         stateTimer: 800 + i * 400,
-        lungeTargetX: 0, lungeTargetY: 0, spec,
+        lungeTargetX: 0, lungeTargetY: 0, huntTargetIdx: -1, spec,
       };
       this.animals.push(minion);
     }

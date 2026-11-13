@@ -749,6 +749,14 @@ async function testAnimalDirections(browser, label) {
     if (atlasKey === 'stag' && !hasAtlases.stag) {
       warn(`[${label}] Stag atlas not loaded — skipping stag dir test`); continue;
     }
+    // Stag doesn't appear in any level yet — spawn a test instance.
+    if (atlasKey === 'stag') {
+      await page.evaluate(() => {
+        const sc = window.__game?.scene.getScene('GameScene');
+        if (sc && typeof sc._spawnTestAnimal === 'function') sc._spawnTestAnimal('stag', 120, 80);
+      });
+      await page.waitForTimeout(400);
+    }
 
     // Find first animal with this atlasKey
     const idx = await page.evaluate((ak) => {
