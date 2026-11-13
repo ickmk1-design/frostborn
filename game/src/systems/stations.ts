@@ -51,9 +51,14 @@ export interface StationInstance {
   cfg: StationConfig;
   sx: number;                       // screen x
   sy: number;                       // screen y
-  workerId: number | null;          // survivor sprite idx manning the station
-  cycleMs: number;                  // ms remaining in current cycle
-  priorityBump: number;             // user-adjustable
+  sprite: unknown;                  // Phaser.GameObjects.Image | null — avoid Phaser import in this module
+  outputPile: unknown;              // small text showing buffered count, or null
+  pileText: unknown;                // Phaser.GameObjects.Text showing N
+  workerId: number;                 // survivor index (-1 = unmanned)
+  cycleMs: number;                  // ms remaining in current cycle; 0 = idle (worker needed to start)
+  priorityBump: number;             // user-adjustable; lower = higher priority
+  outputCount: number;              // resource units sitting at the station waiting to be hauled
+  inputCount: number;               // resource units in local hopper (for consumer stations)
 }
 
 export const DEFAULT_CYCLE_MS: Record<StationKind, number> = {
@@ -77,7 +82,7 @@ export function pickStationForWorker(
   workerLx: number,
   workerLy: number,
 ): StationInstance | null {
-  const unmanned = stations.filter(s => s.workerId === null && s.cfg.kind !== 'fire');
+  const unmanned = stations.filter(s => s.workerId < 0 && s.cfg.kind !== 'fire');
   if (unmanned.length === 0) return null;
 
   // Sort by (priority asc, distance asc). Workers go to the highest-priority
@@ -91,6 +96,19 @@ export function pickStationForWorker(
   });
   return unmanned[0];
 }
+
+// Resources hauled by workers: which station kind (or 'fire') consumes it?
+// Returned value is a StationKind OR the sentinel 'fire' meaning "drop at fire".
+import type { ResourceId } from './resources';
+export const HAUL_DESTINATION: Record<ResourceId, StationKind | 'fire'> = {
+  log:         'fire',            // L1-L15 legacy — logs go to the campfire
+  fish_raw:    'cleaning_table',  // L5+ — otherwise falls back to 'fire' when no cleaning exists
+  fish_clean:  'cook_pot',
+  cooked:      'fire',            // cooked food goes to the fire for consumption
+  meat_raw:    'meat_grinder',
+  meat_ground: 'supply_sled',
+  plank:       'fire',            // planks pile at the fire (temp) until cabins are built
+};
 
 // Legacy-safe: a level with no stations[] key returns [] and the old loop runs.
 export function readStationsFromCfg(cfg: unknown): StationConfig[] {

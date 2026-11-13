@@ -26,9 +26,15 @@ const LEVEL_CONFIGS: Record<string, any> = {
 };
 let cfg: any = level01;
 
-import { readStationsFromCfg, type StationConfig, type StationInstance } from '../systems/stations';
+import {
+  readStationsFromCfg, pickStationForWorker,
+  DEFAULT_CYCLE_MS, HAUL_DESTINATION,
+  type StationConfig, type StationInstance, type StationKind,
+} from '../systems/stations';
+import { STATION_PRODUCES, STATION_CONSUMES, type ResourceId } from '../systems/resources';
 
-type WorkerState = 'idle' | 'toTree' | 'chopping' | 'toFire' | 'fleeing';
+type WorkerState = 'idle' | 'toTree' | 'chopping' | 'toFire' | 'fleeing'
+  | 'toStation' | 'atStation' | 'haul';
 
 interface TreeNode { sprite: Phaser.GameObjects.Image; onCooldown: boolean; }
 
@@ -43,6 +49,10 @@ interface Survivor {
   workerState?: WorkerState;
   workerTarget?: TreeNode;
   workerCarrying: number;
+  // Station runtime (null when using legacy tree loop)
+  workerStation?: StationInstance | null;
+  workerHaulId?: ResourceId | null;    // resource being hauled; null when not hauling
+  workerHaulDest?: { kind: 'fire' } | { kind: 'station'; station: StationInstance } | null;
   bobOffset: number;
   lx: number; ly: number;
   waddlePhase: number;
@@ -890,6 +900,38 @@ export default class GameScene extends Phaser.Scene {
     // ── Dev: `?spawnTest=stag` spawns a stag near the player for preflight dir checks ─
     if (typeof window !== 'undefined' && window.location.search.includes('spawnTest=stag')) {
       this._spawnTestAnimal('stag', 120, 80);
+    }
+
+    // ── Station runtime instances from cfg.stations[] (empty on current L1-L15).
+    for (const scfg of this.stationCfgs) {
+      const [six, siy] = scfg.iso;
+      const sp = isoToScreen(six, siy, ox, oy);
+      const spriteKey = this.stationSpriteKey(scfg.kind);
+      let sprite: Phaser.GameObjects.Image | null = null;
+      if (spriteKey && this.textures.exists(spriteKey)) {
+        sprite = this.add.image(sp.x, sp.y, spriteKey)
+          .setDisplaySize(96, 96).setOrigin(0.5, 0.85);
+        this.depthGroup.push(sprite);
+        // Tap-to-bump priority: lower priorityBump by 1 (max bump: -2).
+        sprite.setInteractive({ useHandCursor: true });
+        const bump = () => {
+          const inst = this.stations.find(st => st.sprite === sprite);
+          if (inst) inst.priorityBump = Math.max(-2, inst.priorityBump - 1);
+        };
+        sprite.on('pointerup', bump);
+      }
+      const pileText = this.add.text(sp.x, sp.y - 70, '', {
+        fontFamily: 'GameFont, cursive', fontSize: '11px', color: '#ffe8b0',
+        stroke: '#000', strokeThickness: 2,
+      }).setOrigin(0.5).setDepth(1200).setVisible(false);
+      const inst: StationInstance = {
+        cfg: scfg, sx: sp.x, sy: sp.y, sprite, outputPile: null, pileText,
+        workerId: -1, cycleMs: 0, priorityBump: scfg.priorityBump ?? 0,
+        outputCount: 0, inputCount: 0,
+      };
+      this.stations.push(inst);
+      // Register as obstacle so the player can't walk through it (small radius).
+      this.obstacles.push({ x: sp.x, y: sp.y, r: 28 });
     }
 
     // Goal stages from level config
@@ -2143,6 +2185,50 @@ export default class GameScene extends Phaser.Scene {
     this.checkWin();
   }
 
+  // Sprite key for each station kind (pulled from the stations_v1 asset set).
+  private stationSpriteKey(kind: StationKind): string {
+    switch (kind) {
+      case 'ice_hole':       return 'station_ice_hole_01';
+      case 'cleaning_table': return 'station_fish_cleaning_table_01';
+      case 'cook_pot':       return 'station_cook_pot_01';
+      case 'lumber_mill':    return 'station_lumber_mill_01';
+      case 'butcher_table':  return 'station_butcher_table_01';
+      case 'meat_grinder':   return 'station_meat_grinder_01';
+      case 'supply_sled':    return 'station_supply_sled_01';
+      case 'watchtower':     return 'building_watchtower_01';
+      case 'fire':           return '';
+      default:               return '';
+    }
+  }
+
+  // Resolve the destination for a hauler holding this resource. Prefers a
+  // consumer station of the mapped kind; falls back to the fire ("drop here").
+  private resolveHaulDest(
+    rid: ResourceId,
+  ): { kind: 'fire' } | { kind: 'station'; station: StationInstance } {
+    const target = HAUL_DESTINATION[rid];
+    if (target === 'fire') return { kind: 'fire' };
+    // Find an existing consumer station of that kind; prefer closer to fire.
+    const candidates = this.stations.filter(s => s.cfg.kind === target);
+    if (candidates.length === 0) return { kind: 'fire' };
+    candidates.sort((a, b) => a.inputCount - b.inputCount);
+    return { kind: 'station', station: candidates[0] };
+  }
+
+  // Convert a delivered resource unit at the fire to in-game gameplay effect.
+  // For logs this reproduces the existing fuel+coin reward; for fish_raw +
+  // cooked etc. it awards coins for now (future waves will route via stages).
+  private deliverToFire(rid: ResourceId): void {
+    if (rid === 'log') {
+      this.fuel = Math.min(cfg.fire.fuelMax, this.fuel + cfg.fire.fuelPerLog);
+      this.coins += cfg.fire.coinsPerLog;
+    } else {
+      // Generic: one unit = 5 coins for now (tuning handled per-level later).
+      this.coins += 5;
+      this.fuel = Math.min(cfg.fire.fuelMax, this.fuel + Math.floor(cfg.fire.fuelPerLog / 2));
+    }
+  }
+
   private updateWorker(w: Survivor, dt: number, delta: number): void {
     if (!w.workerState) w.workerState = 'idle';
     const prevLxW = w.lx; const prevLyW = w.ly;
@@ -2177,6 +2263,21 @@ export default class GameScene extends Phaser.Scene {
         return; // skip other case movement
       }
       case 'idle': {
+        // Station runtime: if this level has stations[], prefer them over trees.
+        // Workers pick the highest-priority unmanned station via STATION_PRIORITY
+        // (fire > food > production > export) with the player's tap-to-bump applied.
+        if (this.stations.length > 0) {
+          const st = pickStationForWorker(this.stations, w.lx, w.ly);
+          if (st) {
+            st.workerId = this.survivors.indexOf(w);
+            w.workerStation = st;
+            w.workerState = 'toStation';
+            w.activeAnim = 'walk';
+            w.stuckMs = 0; w.stuckCheckX = w.lx; w.stuckCheckY = w.ly;
+            break;
+          }
+          // No unmanned station — fall through to legacy tree loop
+        }
         // Cycle through ALL trees to find one not on cooldown.
         // Fix: previously used a fixed treeIndex which could point to an always-on-cooldown tree
         // (e.g. Worker 1 always assigned treeIndex=1 but level may have only 1 tree, or the tree
@@ -2191,6 +2292,90 @@ export default class GameScene extends Phaser.Scene {
           w.stuckMs = 0; w.stuckCheckX = w.lx; w.stuckCheckY = w.ly;
         }
         // If all trees on cooldown, stay idle — will retry next frame (cooldown is short ~5s)
+        break;
+      }
+      case 'toStation': {
+        const st = w.workerStation;
+        if (!st) { w.workerState = 'idle'; break; }
+        const dx = st.sx - w.lx; const dy = st.sy - w.ly; const d = Math.sqrt(dx*dx + dy*dy);
+        if (d < 30) {
+          w.workerState = 'atStation';
+          w.stuckMs = 0;
+          const kind = st.cfg.kind;
+          w.activeAnim = (kind === 'ice_hole' || kind === 'butcher_table' || kind === 'lumber_mill') ? 'chop' : 'idle';
+          // Face the station
+          const toStDir = this.velToDir(st.sx - w.lx, st.sy - w.ly);
+          if (toStDir >= 0) w.lastDir = toStDir;
+          // Start a cycle timer
+          st.cycleMs = st.cfg.cycleMs ?? DEFAULT_CYCLE_MS[st.cfg.kind] ?? 4000;
+        } else {
+          const wvSt = this.projectVelocityFromWalls(
+            (dx/d)*cfg.workerWalkSpeed*WORKER_SPEED_MULT,
+            (dy/d)*cfg.workerWalkSpeed*WORKER_SPEED_MULT,
+            w.lx, w.ly,
+          );
+          w.lx += wvSt.vx*dt; w.ly += wvSt.vy*dt;
+        }
+        break;
+      }
+      case 'atStation': {
+        const st = w.workerStation;
+        if (!st) { w.workerState = 'idle'; break; }
+        // Consumer stations need an input unit before each cycle.
+        const needInput = STATION_CONSUMES[st.cfg.kind];
+        if (needInput && st.inputCount <= 0) {
+          // No input yet — just wait at the station (idle anim).
+          w.activeAnim = 'idle';
+          break;
+        }
+        // Count down the production cycle.
+        st.cycleMs = Math.max(0, st.cycleMs - delta);
+        if (st.cycleMs <= 0) {
+          // Consume one input (if required) and emit one output.
+          if (needInput) st.inputCount = Math.max(0, st.inputCount - 1);
+          const produces = STATION_PRODUCES[st.cfg.kind];
+          if (produces) {
+            // Hand the output to the worker as a haul payload.
+            w.workerHaulId = produces;
+            w.workerHaulDest = this.resolveHaulDest(produces);
+            w.workerState = 'haul';
+            w.activeAnim = 'carry_walk';
+            // Release the station so another worker can clock in.
+            st.workerId = -1;
+            w.workerStation = null;
+          } else {
+            // No output (e.g. supply_sled payout-only) — just reset.
+            st.workerId = -1;
+            w.workerStation = null;
+            w.workerState = 'idle';
+          }
+        }
+        break;
+      }
+      case 'haul': {
+        const dst = w.workerHaulDest;
+        if (!dst || !w.workerHaulId) { w.workerState = 'idle'; break; }
+        const tx = dst.kind === 'fire' ? this.fireX : dst.station.sx;
+        const ty = dst.kind === 'fire' ? this.fireY : dst.station.sy;
+        const dx = tx - w.lx; const dy = ty - w.ly; const d = Math.sqrt(dx*dx + dy*dy);
+        if (d < 40) {
+          // Drop the resource
+          if (dst.kind === 'fire') {
+            this.deliverToFire(w.workerHaulId);
+          } else {
+            dst.station.inputCount += 1;
+          }
+          w.workerHaulId = null; w.workerHaulDest = null;
+          w.workerState = 'idle';
+          w.activeAnim = 'idle';
+        } else {
+          const wvH = this.projectVelocityFromWalls(
+            (dx/d)*cfg.workerWalkSpeed*WORKER_SPEED_MULT,
+            (dy/d)*cfg.workerWalkSpeed*WORKER_SPEED_MULT,
+            w.lx, w.ly,
+          );
+          w.lx += wvH.vx*dt; w.ly += wvH.vy*dt;
+        }
         break;
       }
       case 'toTree': {
