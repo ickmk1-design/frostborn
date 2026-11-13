@@ -720,7 +720,11 @@ async function testAnimalDirections(browser, label) {
   // Check if wolf atlas loaded
   const hasAtlases = await page.evaluate(() => {
     const g = window.__game;
-    return { wolf: g.textures.exists('wolf'), deer: g.textures.exists('deer') };
+    return {
+      wolf: g.textures.exists('wolf'),
+      deer: g.textures.exists('deer'),
+      stag: g.textures.exists('stag'),
+    };
   });
 
   // DIR_CASES: [velX, velY, expectedDir, label]
@@ -735,12 +739,15 @@ async function testAnimalDirections(browser, label) {
     [91.9, -91.9,  3, 'Right+Up'],
   ];
 
-  for (const [atlasKey, animalIdx] of [['wolf', 0], ['deer', -1]]) {
+  for (const [atlasKey, animalIdx] of [['wolf', 0], ['deer', -1], ['stag', -1]]) {
     if (atlasKey === 'wolf' && !hasAtlases.wolf) {
       warn(`[${label}] Wolf atlas not loaded — skipping wolf dir test`); continue;
     }
     if (atlasKey === 'deer' && !hasAtlases.deer) {
       warn(`[${label}] Deer atlas not loaded — skipping deer dir test`); continue;
+    }
+    if (atlasKey === 'stag' && !hasAtlases.stag) {
+      warn(`[${label}] Stag atlas not loaded — skipping stag dir test`); continue;
     }
 
     // Find first animal with this atlasKey
