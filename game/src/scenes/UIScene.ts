@@ -9,6 +9,7 @@ interface HudUpdateData {
   coins:        number;
   goalText:     string;
   survivors:    number;
+  survivorGoal: number;
   bannerAlpha:  number;
   hintText:     string;
   hintAlpha:    number;
@@ -36,6 +37,7 @@ export default class UIScene extends Phaser.Scene {
 
   // Survivors
   private survivorIcons: Phaser.GameObjects.Graphics[] = [];
+  private survivorCountText!: Phaser.GameObjects.Text;
 
   // Overlay buttons
   private refuelBtn!:   Phaser.GameObjects.Text;
@@ -174,7 +176,12 @@ export default class UIScene extends Phaser.Scene {
       fontFamily: FF, fontSize: '10px', color: '#88ddff',
       stroke: '#000', strokeThickness: 2,
     }).setDepth(12);
-    this.survivorIcons = [0, 1, 2].map(() => this.add.graphics().setDepth(12));
+    // Up to 5 slot dots for small levels; text "x/N" replaces them for bigger goals.
+    this.survivorIcons = [0, 1, 2, 3, 4].map(() => this.add.graphics().setDepth(12));
+    this.survivorCountText = this.add.text(270, SAF + 30, '', {
+      fontFamily: FF, fontSize: '16px', color: '#ffe8b0',
+      stroke: '#000', strokeThickness: 2,
+    }).setOrigin(0, 0.5).setDepth(12).setVisible(false);
 
     // ── 10. Pause button (round wooden, top-right of HUD) ─────────────────
     const pBtnX = W - 26; const pBtnY = CTR_Y; const pBtnR = 18;
@@ -298,8 +305,8 @@ export default class UIScene extends Phaser.Scene {
     // Stop UIScene when GameScene shuts down
     gs.events.once('shutdown', () => this.scene.stop('UIScene'));
 
-    // Draw initial survivor icons (grey)
-    this.drawSurvivorIcons(0);
+    // Draw initial survivor icons (grey) — goal will be refreshed on first hud-update
+    this.drawSurvivorIcons(0, 3);
   }
 
   private openPause(): void {
@@ -390,16 +397,27 @@ export default class UIScene extends Phaser.Scene {
     });
   }
 
-  private drawSurvivorIcons(count: number): void {
+  private drawSurvivorIcons(count: number, goal: number): void {
     const SAF   = Math.max(44, this.safeTop + 4);
     const CTR_Y = SAF + 30;
-    const xs    = [270, 290, 310];
-    for (let i = 0; i < 3; i++) {
-      const ic     = this.survivorIcons[i];
-      const filled = i < count;
-      ic.clear();
-      ic.fillStyle(filled ? 0x44ff88 : 0x445566, filled ? 1 : 0.6)
-        .fillCircle(xs[i], CTR_Y, 7);
+    const useText = goal > 5;
+    if (useText) {
+      // Hide all dot icons and show compact "x/N" text instead.
+      for (const ic of this.survivorIcons) ic.clear();
+      this.survivorCountText.setText(`${count}/${goal}`).setVisible(true);
+    } else {
+      this.survivorCountText.setVisible(false);
+      const slots = Math.max(1, goal || 3);
+      const spacing = 16;
+      const x0 = 272;
+      for (let i = 0; i < this.survivorIcons.length; i++) {
+        const ic = this.survivorIcons[i];
+        ic.clear();
+        if (i >= slots) continue;
+        const filled = i < count;
+        ic.fillStyle(filled ? 0x44ff88 : 0x445566, filled ? 1 : 0.6)
+          .fillCircle(x0 + i * spacing, CTR_Y, 6);
+      }
     }
   }
 
@@ -422,8 +440,8 @@ export default class UIScene extends Phaser.Scene {
     // Coin
     this.coinText.setText(String(data.coins));
 
-    // Survivor icons
-    this.drawSurvivorIcons(data.survivors);
+    // Survivor icons / count
+    this.drawSurvivorIcons(data.survivors, data.survivorGoal);
 
     // Banner
     this.buildBannerText.setText(data.goalText);

@@ -401,7 +401,9 @@ export default class GameScene extends Phaser.Scene {
 
     // ── Ground ────────────────────────────────────────────────────────────
     // Snow outside
-    this.add.graphics().fillStyle(0xd8eaf8, 1).fillRect(-800, -800, 4000, 4000).setDepth(-10);
+    // Extend snow well beyond any possible camera bound so the dark background
+    // can never peek through at the edges.
+    this.add.graphics().fillStyle(0xd8eaf8, 1).fillRect(-2500, -2500, 9000, 9000).setDepth(-10);
     // Snow texture variation — tiny stipple dots only, no big blobs
     const snowGfx = this.add.graphics().setDepth(-9);
     for (let i = 0; i < 400; i++) {
@@ -529,7 +531,9 @@ export default class GameScene extends Phaser.Scene {
         .setDisplaySize(70, 70).setOrigin(0.5, 0.85);
       this.depthGroup.push(sp);
       this.trees.push({ sprite: sp, onCooldown: false });
-      this.obstacles.push({ x: pos.x, y: pos.y, r: 20 });
+      // Shrunk collider to the visible trunk base (was 20) so the hero only stops
+      // when actually touching the trunk — small radius also lets him slide past.
+      this.obstacles.push({ x: pos.x, y: pos.y, r: 12 });
     }
 
     // ── Decor ─────────────────────────────────────────────────────────────
@@ -1240,7 +1244,13 @@ export default class GameScene extends Phaser.Scene {
     const rawDir = this.velToDir(pvx, pvy);
     const pds = this.stepDir(this.playerLastDir, this.pendingDir, this.pendingDirMs, rawDir, delta);
     this.playerLastDir = pds.lastDir; this.pendingDir = pds.pendingDir; this.pendingDirMs = pds.pendingMs;
-    if (isMoving) {
+    // While the hero is in an attack swing, keep the chop animation; don't let the
+    // walk/idle frame overwrite it every tick (the old behaviour made the swing
+    // invisible — hero just stood there and damage appeared out of nowhere).
+    if (this.playerAttackMs > 0) {
+      // Attack anim was started inside the attack branch; just hold it.
+      this.playerSprite.anims.timeScale = 1;
+    } else if (isMoving) {
       this.playCharAnim(this.playerSprite, 'hero', 'walk', this.playerLastDir);
       const spd = Math.sqrt(this.playerVelX * this.playerVelX + this.playerVelY * this.playerVelY);
       if (spd > 0) this.playerSprite.anims.timeScale = spd / BASE_WALK_SPEED;
@@ -1406,6 +1416,10 @@ export default class GameScene extends Phaser.Scene {
 
         if (distPl < cfg.survivorFollowRangePx) {
           sv.state = 'following';
+          // Claim a unique ring slot right now so each thawed survivor heads for
+          // its own spot around the fire — no queueing, no overlap.
+          sv.workerSlot = this.nextWorkerSlot;
+          this.nextWorkerSlot = (this.nextWorkerSlot + 1) % Math.max(1, this.numWorkerSlots);
           safePlay(this, 'snd_ice_shatter', { volume: 0.7 });
           // Remove all frozen visuals with ice shatter
           sv.iceGfx?.destroy(); sv.iceGfx = undefined;
@@ -1432,22 +1446,43 @@ export default class GameScene extends Phaser.Scene {
       }
     }
 
-    // Single-file trail following: each follower targets the one in front at TRAIL_SPACING
-    let tlLX = this.playerLX; let tlLY = this.playerLY;
+    // Loose-group following: every follower steers toward the player directly, with
+    // applySeparation pushing them apart. Replaces the old single-file trail that
+    // jammed followers at the gate. Once close to camp, each picks a unique ring slot
+    // around the fire and walks to it before thawing — no queueing.
+    const slotR = Math.max(90, this.numWorkerSlots * 10);
     for (const sv of this.survivors) {
       if (sv.state !== 'following') continue;
       const svPrevLx = sv.lx; const svPrevLy = sv.ly;
 
-      const dx = tlLX - sv.lx; const dy = tlLY - sv.ly;
+      // Pick a ring slot the first time this follower crosses into camp range.
+      if (sv.workerSlot === 0 && this.nextWorkerSlot > 0) {
+        // Already assigned (default 0 can be ambiguous, so use a flag via stuckCheck)
+      }
+      // Target: ring slot if assigned, else follow player loosely
+      const ringAngle = (sv.workerSlot >= 0 ? sv.workerSlot : 0) * (2 * Math.PI / Math.max(1, this.numWorkerSlots));
+      const slotX = this.fireX + Math.cos(ringAngle) * slotR;
+      const slotY = this.fireY + Math.sin(ringAngle) * slotR * 0.6; // iso squish
+
+      // If near the fire area, target the ring slot; otherwise follow the player.
+      const distToFire = Math.hypot(sv.lx - this.fireX, sv.ly - this.fireY);
+      const useRingTarget = distToFire < cfg.survivorThawRangePx * 2;
+      const tgtX = useRingTarget ? slotX : this.playerLX;
+      const tgtY = useRingTarget ? slotY : this.playerLY;
+
+      const dx = tgtX - sv.lx; const dy = tgtY - sv.ly;
       const d = Math.sqrt(dx * dx + dy * dy);
-      if (d > TRAIL_SPACING) {
+      const stopR = useRingTarget ? 6 : 68;  // ring slot: nearly on top; follow player: loose radius
+      if (d > stopR) {
         const speed = cfg.workerWalkSpeed * WORKER_SPEED_MULT;
-        const move = Math.min(d - TRAIL_SPACING, speed * dt);
+        const move = Math.min(d - stopR, speed * dt);
         sv.lx += (dx / d) * move;
         sv.ly += (dy / d) * move;
       }
 
-      const co = this.constrainToObstacles(sv.lx, sv.ly);
+      // Separation (reused) so the group spreads and never stacks at the gate.
+      const sep = this.applySeparation(sv.lx, sv.ly, sv);
+      const co = this.constrainToObstacles(sep.x, sep.y);
       const wc = this.wallConstrain(svPrevLx, svPrevLy, co.x, co.y);
       sv.lx = wc.x; sv.ly = wc.y;
 
@@ -1462,13 +1497,13 @@ export default class GameScene extends Phaser.Scene {
         this.footprintEmitter.emitParticleAt(sv.lx, sv.ly);
       this.applyCharWaddle(sv, dt, svMoving);
 
-      // Reached fire → start thawing
-      if ((sv.lx - this.fireX) ** 2 + (sv.ly - this.fireY) ** 2 < cfg.survivorThawRangePx ** 2) {
+      // Arrived at ring slot → start thawing in place
+      if (useRingTarget && d < 10) {
+        // Face the fire while thawing
+        const toFireDir = this.velToDir(this.fireX - sv.lx, this.fireY - sv.ly);
+        if (toFireDir >= 0) sv.lastDir = toFireDir;
         sv.state = 'thawing';
       }
-
-      // This survivor becomes the leader for the next follower
-      tlLX = sv.lx; tlLY = sv.ly;
     }
 
     // Workers
@@ -1699,10 +1734,12 @@ export default class GameScene extends Phaser.Scene {
         const ad2 = ax*ax + ay*ay;
         if (ad2 > 64) { const ad=Math.sqrt(ad2); a.lx+=(ax/ad)*a.spec.speed*dt; a.ly+=(ay/ad)*a.spec.speed*dt; }
         if (distToPlayer < a.spec.aggroRange) {
-          a.state = 'circle';
-          a.circleAngle = Math.atan2(a.ly - this.playerLY, a.lx - this.playerLX);
-          a.circleDir = Math.random() > 0.5 ? 1 : -1;
-          a.stateTimer = 800 + Math.random() * 1200;
+          // Charge on sight — skip the leisurely orbit and commit to a windup+lunge
+          // immediately. Previously wolves orbited for 0.8-2s before engaging, which
+          // felt passive once the player stepped out of the camp.
+          a.state = 'windup';
+          a.stateTimer = a.spec.windupMs;
+          a.lungeTargetX = this.playerLX; a.lungeTargetY = this.playerLY;
         }
       }
 
@@ -1738,6 +1775,26 @@ export default class GameScene extends Phaser.Scene {
             this.pickRoamTarget(a); // blocked roam target — pick a new one outside wall
           }
           // circle/backoff stay in state: wolf paces along wall following the player
+        }
+      }
+
+      // ── Animal-animal separation ────────────────────────────────────────────
+      // Wolves piled on top of each other during circling. Push each pair apart
+      // when centres are closer than the animal body radius; skips dead/flee
+      // and lunge (letting wolves commit to the bite without being nudged aside).
+      if (a.state !== 'lunge' && a.state !== 'flee') {
+        const sepR = Math.max(32, a.displaySize * 0.42);
+        const sepR2 = sepR * sepR;
+        for (const b of this.animals) {
+          if (b === a) continue;
+          const dxs = a.lx - b.lx; const dys = a.ly - b.ly;
+          const d2s = dxs*dxs + dys*dys;
+          if (d2s < sepR2 && d2s > 0.01) {
+            const ds = Math.sqrt(d2s);
+            const push = (sepR - ds) * 0.5;
+            const ux = dxs / ds; const uy = dys / ds;
+            a.lx += ux * push; a.ly += uy * push;
+          }
         }
       }
 
@@ -1850,8 +1907,10 @@ export default class GameScene extends Phaser.Scene {
     if (!this.playerDead && this.playerHp < this.playerHpMax) {
       this.playerHpBarGfx.clear();
       const bw = 44; const bx = this.playerLX - bw / 2;
-      const carried = Math.max(this.carriedLogs, this.carriedMeat);
-      const by = this.playerLY + this.playerBobY - CHAR_SIZE - 10 - (carried > 0 ? carried * 14 + 20 : 0);
+      // Anchor the HP bar just above the hero's head. The old formula shifted it up
+      // by (carriedLogs * 14 + 20) which stacked a full character-height for a
+      // 4-log carry — the bar would detach and float near the fence.
+      const by = this.playerLY + this.playerBobY - CHAR_SIZE - 14;
       this.playerHpBarGfx.fillStyle(0x222222, 0.8).fillRoundedRect(bx - 1, by - 1, bw + 2, 8, 3);
       const pct = this.playerHp / this.playerHpMax;
       const col = pct > 0.5 ? 0x44ff44 : pct > 0.25 ? 0xffaa00 : 0xff2222;
@@ -1913,6 +1972,7 @@ export default class GameScene extends Phaser.Scene {
       coins:      Math.floor(this.coins),
       goalText:   goalStr,
       survivors:  this.rescuedCount,
+      survivorGoal: cfg.goal.survivorsToRescue,
       bannerAlpha,
       hintText:   hintMsg,
       hintAlpha,
@@ -2020,10 +2080,11 @@ export default class GameScene extends Phaser.Scene {
     s.state = 'worker'; s.workerState = 'idle'; s.activeAnim = 'idle';
     s.sprite.clearTint();
     s.thawBar?.destroy(); s.thawBar = undefined;
+    // Small steam puff + ice crack at completion (user-visible "thawed" cue).
+    this.iceShatterEmitter.emitParticleAt(s.lx, s.ly - 28, 10);
     s.treeIndex = this.nextWorkerTreeIndex;
     this.nextWorkerTreeIndex = (this.nextWorkerTreeIndex + 1) % Math.max(1, this.trees.length);
-    s.workerSlot = this.nextWorkerSlot;
-    this.nextWorkerSlot = (this.nextWorkerSlot + 1) % this.numWorkerSlots;
+    // workerSlot was claimed when state → 'following'; do not re-assign.
     s.stuckMs = 0; s.stuckCheckX = s.lx; s.stuckCheckY = s.ly;
     this.rescuedCount++;
     this.advanceGoalStage();

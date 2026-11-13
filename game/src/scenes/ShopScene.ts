@@ -43,25 +43,33 @@ export default class ShopScene extends Phaser.Scene {
 
     drawKeyArtBg(this, W, H);
 
+    // Fixed header strip — solid so the scrolling list can never reveal past it
+    // and the "giant" top-right coin glitch (tap-through from scroll handler
+    // under the list) is impossible.
+    const headerH = Math.max(56, safeT + 48);
+    const headerBg = this.add.graphics().setDepth(19);
+    headerBg.fillStyle(0x0a0f1e, 0.96).fillRect(0, 0, W, headerH);
+    headerBg.lineStyle(1, 0x2a3a5a, 0.6).lineBetween(0, headerH, W, headerH);
+
     // Back button
     makeBackButton(this, safeT + 24, safeT + 24, () => {
       this.cameras.main.fadeOut(200, 0, 0, 0);
       this.time.delayedCall(210, () => this.scene.start(this.fromScene));
-    }, 20);
+    }, 22);
 
     // Title
     makeScreenTitle(this, CX, safeT + 24, t('shopTitle'));
 
-    // Coin balance — top right
+    // Coin balance — top right. Explicit non-interactive to kill any tap-to-expand.
     const coinBarX = W - safeT - 10;
     if (this.textures.exists('resource_coin_gold_01')) {
       this.add.image(coinBarX - 46, safeT + 24, 'resource_coin_gold_01')
-        .setDisplaySize(24, 24).setDepth(21);
+        .setDisplaySize(24, 24).setDepth(22).disableInteractive();
     }
     this.coinBalanceText = this.add.text(coinBarX - 20, safeT + 24, String(getCoins()), {
       fontFamily: FF, fontSize: '18px', fontStyle: 'bold',
       color: Colors.goldText, stroke: '#3a2000', strokeThickness: 2,
-    }).setOrigin(0, 0.5).setDepth(21);
+    }).setOrigin(0, 0.5).setDepth(22).disableInteractive();
 
     // Load IAP packages
     let pkgMap: Record<string, PurchasesPackage> = {};
@@ -174,8 +182,14 @@ export default class ShopScene extends Phaser.Scene {
     items.forEach(item => { totalListH += (item.featured ? featuredH : rowH) + gap; });
     totalListH -= gap;
 
-    const listStartY = topBarH + 10;
+    const listStartY = Math.max(topBarH + 10, headerH + 10);
     const container  = this.add.container(0, listStartY).setDepth(10);
+
+    // Geometry mask: cards are clipped to the area below the header so a scrolled-up
+    // card never slides underneath the back button / title / coin.
+    const maskShape = this.make.graphics({});
+    maskShape.fillRect(0, headerH, W, H - headerH);
+    container.setMask(new Phaser.Display.Masks.GeometryMask(this, maskShape));
 
     let curY = 0;
     items.forEach(item => {
