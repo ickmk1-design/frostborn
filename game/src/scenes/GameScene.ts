@@ -1017,7 +1017,7 @@ export default class GameScene extends Phaser.Scene {
       hit:    { frames: 8,  fps: 14, loop: false },
       death:  { frames: 14, fps: 10, loop: false },
     };
-    for (const char of ['wolf', 'deer']) {
+    for (const char of ['wolf', 'deer', 'stag']) {
       if (!this.textures.exists(char)) continue;
       for (const [anim, { frames: nf, fps, loop }] of Object.entries(ANIMAL_ANIM_DEF)) {
         for (let d = 0; d < 8; d++) {
@@ -1060,7 +1060,7 @@ export default class GameScene extends Phaser.Scene {
     // doing it here means the player, workers, wolves and deer are already
     // GPU-resident before the player can move.
     const warmupSprites: Phaser.GameObjects.Sprite[] = [];
-    for (const key of ['hero', 'worker', 'wolf', 'deer']) {
+    for (const key of ['hero', 'worker', 'wolf', 'deer', 'stag']) {
       if (!this.textures.exists(key)) continue;
       // Each atlas uses the `${key}_walk_d0_f0` frame; the particle-free
       // pre-draw forces the texture into the GPU without affecting gameplay.

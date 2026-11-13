@@ -13,8 +13,8 @@
 
 | Wave | Content | Est. | Test deliverable | Status |
 |---|---|---|---|---|
-| 1 | Stations scaffold (`Station` type, config loader, auto-assign priority) | 0.5 d | Regression pass — existing L1-L15 play identically | IN PROGRESS |
-| 2 | Resource system (log/fish/clean/meat/plank/ground/cooked) carry-slot items | 1 d | Existing L1-L15 play on new resource plumbing | pending |
+| 1 | Stations scaffold (`Station` type, config loader, auto-assign priority) | 0.5 d | Regression pass — existing L1-L15 play identically | **DEPLOYED** b2c7a760 |
+| 2 | Resource system (log/fish/clean/meat/plank/ground/cooked) carry-slot items | 1 d | Existing L1-L15 play on new resource plumbing | **DEPLOYED** (scaffold) |
 | 3 | Assets A (ice hole, pier, water, fish, cleaning table, cook pot) + L4 + L5 | 2 d | L4 fishing + L5 cleaning/cook on phone | pending |
 | 4 | L6 Wolves-at-the-Lake (reuses wolf assets) | 0.5 d | L6 — wolves break fishing chain, hero clears, chain resumes | pending |
 | 5 | Assets B (lumber mill, planks, cabin stages) + L7 mill + L8 cabin | 2 d | L7 planks + L8 shelter capacity gate | pending |
