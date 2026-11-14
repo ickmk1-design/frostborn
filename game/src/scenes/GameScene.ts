@@ -933,8 +933,11 @@ export default class GameScene extends Phaser.Scene {
         outputCount: 0, inputCount: 0,
       };
       this.stations.push(inst);
-      // Register as obstacle so the player can't walk through it (small radius).
-      this.obstacles.push({ x: sp.x, y: sp.y, r: 28 });
+      // Small obstacle at the base of the sprite so entities can't walk
+      // through it, but small enough that an incoming worker reaches the
+      // station interaction radius before colliding. Old 28 caused workers
+      // to orbit outside the station on L5.
+      this.obstacles.push({ x: sp.x, y: sp.y, r: 14 });
     }
 
     // Goal stages from level config
@@ -2393,7 +2396,7 @@ export default class GameScene extends Phaser.Scene {
         const st = w.workerStation;
         if (!st) { w.workerState = 'idle'; break; }
         const dx = st.sx - w.lx; const dy = st.sy - w.ly; const d = Math.sqrt(dx*dx + dy*dy);
-        if (d < 30) {
+        if (d < 36) {
           w.workerState = 'atStation';
           w.stuckMs = 0;
           const kind = st.cfg.kind;
