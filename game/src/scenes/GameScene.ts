@@ -1732,7 +1732,7 @@ export default class GameScene extends Phaser.Scene {
       if (a.state === 'flee') {
         // ── Flee: run away from player ──────────────────────────────────────
         a.fleeMs = Math.max(0, a.fleeMs - delta);
-        if (a.fleeMs <= 0) { a.state = 'roam'; a.sprite.setTint(a.baseTint); }
+        if (a.fleeMs <= 0) { a.state = 'roam'; a.huntTargetIdx = -1; a.sprite.setTint(a.baseTint); }
         const fdx = a.lx - this.playerLX; const fdy = a.ly - this.playerLY;
         const flen = Math.sqrt(fdx*fdx + fdy*fdy);
         if (flen > 0) { a.lx += (fdx/flen)*a.spec.aggroSpeed*dt; a.ly += (fdy/flen)*a.spec.aggroSpeed*dt; }
@@ -1753,7 +1753,7 @@ export default class GameScene extends Phaser.Scene {
         a.stateTimer = Math.max(0, a.stateTimer - delta);
         if (a.stateTimer <= 0) { a.state = 'windup'; a.stateTimer = a.spec.windupMs; a.lungeTargetX = this.playerLX; a.lungeTargetY = this.playerLY; }
         // If player walks away, drop back to roam
-        if (distToPlayer > a.spec.aggroRange * 2.5) { a.state = 'roam'; a.sprite.setTint(a.baseTint); }
+        if (distToPlayer > a.spec.aggroRange * 2.5) { a.state = 'roam'; a.huntTargetIdx = -1; a.sprite.setTint(a.baseTint); }
 
       } else if (a.state === 'windup') {
         // ── Windup: pause, crouch (scale pulse), face player ─────────────────
@@ -1822,6 +1822,11 @@ export default class GameScene extends Phaser.Scene {
           const w = this.survivors[wi];
           if (w.state !== 'worker') continue;
           if (w.workerState === 'fleeing') continue;
+          // Only target workers that are MANNING A STATION or hauling from one.
+          // Legacy tree-chop workers were never hunted pre-Wave-4 and must stay
+          // safe on levels that use trees (L1-L15 current). Fishing / crafting
+          // workers at a station are fair game — this is "Wolves at the Lake".
+          if (w.workerState !== 'atStation' && w.workerState !== 'haul') continue;
           // Don't hunt workers already at the fire (safe zone, radius ~85 px).
           const fdx = w.lx - this.fireX, fdy = w.ly - this.fireY;
           if (fdx*fdx + fdy*fdy < 85*85) continue;
@@ -2321,26 +2326,30 @@ export default class GameScene extends Phaser.Scene {
 
     switch (w.workerState) {
       case 'fleeing': {
-        // Sprint to the fire; return to idle once inside the safe ring.
+        // Sprint to the fire; return to idle once inside the safe ring AND no
+        // hostile wolf is physically close. We check distance (not stale
+        // huntTargetIdx) so the worker never stays locked in flee after the
+        // wolf has already moved on to another target.
         const dxF = this.fireX - w.lx; const dyF = this.fireY - w.ly;
         const dF = Math.sqrt(dxF*dxF + dyF*dyF);
         if (dF > 55) {
           const fleeSpeed = cfg.workerWalkSpeed * WORKER_SPEED_MULT * 1.5;
           w.lx += (dxF / dF) * fleeSpeed * dt;
           w.ly += (dyF / dF) * fleeSpeed * dt;
-          // Face the fire while running to it
           const toFireDir = this.velToDir(dxF, dyF);
           if (toFireDir >= 0) w.lastDir = toFireDir;
           w.activeAnim = 'walk';
           this.applyCharWaddle(w, dt, true);
         } else {
-          // Safe at fire — go idle if no active hunter remaining
-          const wi = this.survivors.indexOf(w);
-          const stillHunted = this.animals.some(a =>
-            a.state !== 'dead' && a.state !== 'flee' &&
-            a.huntTargetIdx === wi
+          // Safe at fire. Any wolf within 1.5× aggroRange still counts as hostile
+          // and keeps the worker huddled; otherwise go back to idle.
+          const HOSTILE_STATES = new Set(['windup', 'lunge', 'circle', 'backoff']);
+          const stillClose = this.animals.some(a =>
+            a.state !== 'dead' && a.state !== 'flee' && HOSTILE_STATES.has(a.state) &&
+            (a.lx - w.lx) ** 2 + (a.ly - w.ly) ** 2 <
+              (a.spec.aggroRange * 1.5) ** 2,
           );
-          if (!stillHunted) w.workerState = 'idle';
+          if (!stillClose) w.workerState = 'idle';
         }
         // Still apply obstacle constraints
         const soCo = this.constrainToObstacles(w.lx, w.ly);
@@ -2635,6 +2644,7 @@ export default class GameScene extends Phaser.Scene {
 
   private killAnimal(a: AnimalEntity): void {
     a.state = 'dead'; a.deathMs = 600;
+    a.huntTargetIdx = -1;
     a.respawnMs = a.spec.respawnDelaySec * 1000;
     a.sprite.clearTint();
     if (a.eyeGlow) a.eyeGlow.setVisible(false);
@@ -2699,7 +2709,7 @@ export default class GameScene extends Phaser.Scene {
     a.sprite = sp;
 
     a.hp = a.maxHp; a.lx = a.spawnLx; a.ly = a.spawnLy;
-    a.state = 'roam'; a.summonedMinions = false;
+    a.state = 'roam'; a.summonedMinions = false; a.huntTargetIdx = -1;
     if (a.eyeGlow) a.eyeGlow.setVisible(true).setPosition(a.lx, a.ly - a.displaySize * 0.78);
     this.pickRoamTarget(a);
   }
