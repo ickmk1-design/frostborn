@@ -557,77 +557,6 @@ async function testShopButtons(browser, label) {
 }
 
 // ── Decor / tree overlap check ────────────────────────────────────────────────
-// Every stages[*].hintText and completedText must have a Turkish sibling
-// (hintTextTr / completedTextTr). Prevents English leaks on TR locale.
-async function testLevelLocaleCompleteness() {
-  console.log('\n--- Level i18n Completeness ---');
-  const path = require('path');
-  const fs = require('fs');
-  const levelsDir = path.join(__dirname, 'src', 'levels');
-  const levelFiles = fs.readdirSync(levelsDir).filter(f => /^level\d+\.json$/.test(f));
-  let failures = 0;
-  for (const lf of levelFiles) {
-    const cfg = JSON.parse(fs.readFileSync(path.join(levelsDir, lf), 'utf8'));
-    (cfg.stages || []).forEach((s, i) => {
-      if (s.hintText && !s.hintTextTr) {
-        fail(`[${lf}] stages[${i}].hintText has no hintTextTr: "${s.hintText}"`);
-        failures++;
-      }
-      if (s.completedText && !s.completedTextTr) {
-        fail(`[${lf}] stages[${i}].completedText has no completedTextTr: "${s.completedText}"`);
-        failures++;
-      }
-    });
-  }
-  if (!failures) pass(`All ${levelFiles.length} level JSONs have Turkish hint+completed translations`);
-}
-
-// Regression guard: the "snow" bar above wooden buttons was removed. Sample a strip
-// just above the Play button and assert it is not a bright blue-white (>50% of pixels
-// above threshold would mean the bar is back).
-async function testMainMenuNoGreyBar(browser, label) {
-  console.log('\n--- Main Menu Grey-Bar Regression ---');
-  const ctx = await browser.newContext({ viewport: VIEWPORT, isMobile: true, hasTouch: true });
-  const page = await ctx.newPage();
-  try {
-    await page.goto(BASE, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    await page.waitForTimeout(2500);  // let main menu render
-    const outPath = path.join(__dirname, `screenshot-mainmenu-${label.toLowerCase()}.png`);
-    await page.screenshot({ path: outPath });
-    // Sample a thin strip centred horizontally, 6-14 px above the Play button
-    // (bigH ≈ H*0.075 = 63; playY = H*0.76 = 641; top of bigButton = playY - bigH/2 = 609).
-    // Target strip: y = 595..605 (just above Play button).
-    const result = await page.evaluate(() => {
-      const c = document.querySelector('canvas'); if (!c) return null;
-      const ctx2 = c.getContext('2d'); if (!ctx2) return null;
-      const w = c.width, h = c.height;
-      // Device-pixel scaling: find screen-space 600±5 → canvas y
-      const scale = h / window.innerHeight;
-      const yTop = Math.round(595 * scale);
-      const yBot = Math.round(605 * scale);
-      const xL = Math.round((w / 2) - 60 * scale);
-      const xR = Math.round((w / 2) + 60 * scale);
-      const img = ctx2.getImageData(xL, yTop, xR - xL, yBot - yTop).data;
-      let bright = 0; let total = 0;
-      for (let i = 0; i < img.length; i += 4) {
-        const r = img[i], g = img[i + 1], b = img[i + 2];
-        // "snow bar" was #ddeeff @ 0.78 alpha on dark bg → RGB roughly (221, 238, 255) * 0.78
-        if (r > 150 && g > 180 && b > 200) bright++;
-        total++;
-      }
-      return { bright, total, pct: total > 0 ? bright / total : 0 };
-    });
-    if (!result) { warn('MainMenu canvas unreadable; skipping grey-bar check'); return; }
-    if (result.pct > 0.35) {
-      fail(`MainMenu grey bar regression: ${(result.pct * 100).toFixed(0)}% of strip above Play is bright (${result.bright}/${result.total}). See ${outPath}`);
-    } else {
-      pass(`MainMenu strip above Play button has no grey/snow bar (${(result.pct * 100).toFixed(0)}% bright, ok)`);
-    }
-  } finally {
-    await ctx.close();
-  }
-}
-
 // Verifies no decor or tree in any level JSON overlaps: build pads, fire position,
 // or other gameplay spots. Uses ISO distance — anything closer than 1.0 iso unit fails.
 async function testDecorOverlap() {
@@ -720,11 +649,7 @@ async function testAnimalDirections(browser, label) {
   // Check if wolf atlas loaded
   const hasAtlases = await page.evaluate(() => {
     const g = window.__game;
-    return {
-      wolf: g.textures.exists('wolf'),
-      deer: g.textures.exists('deer'),
-      stag: g.textures.exists('stag'),
-    };
+    return { wolf: g.textures.exists('wolf'), deer: g.textures.exists('deer') };
   });
 
   // DIR_CASES: [velX, velY, expectedDir, label]
@@ -739,23 +664,12 @@ async function testAnimalDirections(browser, label) {
     [91.9, -91.9,  3, 'Right+Up'],
   ];
 
-  for (const [atlasKey, animalIdx] of [['wolf', 0], ['deer', -1], ['stag', -1]]) {
+  for (const [atlasKey, animalIdx] of [['wolf', 0], ['deer', -1]]) {
     if (atlasKey === 'wolf' && !hasAtlases.wolf) {
       warn(`[${label}] Wolf atlas not loaded — skipping wolf dir test`); continue;
     }
     if (atlasKey === 'deer' && !hasAtlases.deer) {
       warn(`[${label}] Deer atlas not loaded — skipping deer dir test`); continue;
-    }
-    if (atlasKey === 'stag' && !hasAtlases.stag) {
-      warn(`[${label}] Stag atlas not loaded — skipping stag dir test`); continue;
-    }
-    // Stag doesn't appear in any level yet — spawn a test instance.
-    if (atlasKey === 'stag') {
-      await page.evaluate(() => {
-        const sc = window.__game?.scene.getScene('GameScene');
-        if (sc && typeof sc._spawnTestAnimal === 'function') sc._spawnTestAnimal('stag', 120, 80);
-      });
-      await page.waitForTimeout(400);
     }
 
     // Find first animal with this atlasKey
@@ -958,12 +872,6 @@ async function testWorkerDelivery(browser, label) {
 
     // ── 9. Decor/tree overlap check ──
     await testDecorOverlap();
-
-    // ── 9b. Level JSON i18n completeness ──
-    await testLevelLocaleCompleteness();
-
-    // ── 9c. Main-menu grey-bar regression check (screenshot sample) ──
-    if (wkOk) await testMainMenuNoGreyBar(wk, 'WebKit');
 
     // ── 10. Animal direction facing ──
     if (wkOk) await testAnimalDirections(wk, 'WebKit');

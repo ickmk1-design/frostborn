@@ -295,11 +295,6 @@ class Bot {
       case 'buildStructure':  await this.doBuild(stage, state);  break;
       case 'huntAnimals':     await this.doHunt(stage, state);   break;
       case 'collectLogs':     await this.doCollectLogs(stage, state); break;
-      case 'fishCaught':
-      case 'cookedServed':
-        // Worker-driven goals — bot tends the fire while workers produce.
-        await this.doTendFire(stage, state);
-        break;
       default:
         // Unknown — stay near fire
         await this.navigateTo(state, this.firePos.x, this.firePos.y, 600);
@@ -449,22 +444,6 @@ class Bot {
     await this.fireCycle(state, 1500, 1500);
   }
 
-  async doTendFire(stage, state) {
-    // Worker-production goals (fishing, cooking). Bot just tops up fuel when
-    // it's getting low; otherwise idles next to the fire so workers keep working.
-    const fuelPct = state.fuel / this.fuelMax;
-    if (fuelPct < 0.65) {
-      await this.fireCycle(state, 1200, 1200);
-      return;
-    }
-    await this.navigateTo(state, this.firePos.x, this.firePos.y + 40, 800);
-    await this.page.waitForTimeout(600);
-  }
-
-  // Also skip the Worker stuck-detector for the new station-fleeing states —
-  // "fleeing" is a transient sprint and never a bug; state "atStation" is
-  // intentional dwelling (worker stands at the station producing).
-
   // ── Worker/entity QA checks ────────────────────────────────────────────────
   checkEntities(state) {
     for (const w of state.workers) {
@@ -474,7 +453,7 @@ class Bot {
         this.workerPrev.set(key, { x: w.lx, y: w.ly, t: Date.now() });
       } else if (Date.now() - prev.t >= STUCK_LIMIT) {
         const moved = dist(prev.x, prev.y, w.lx, w.ly);
-        if (moved < 8 && w.workerState !== 'chopping' && w.workerState !== 'atStation') {
+        if (moved < 8 && w.workerState !== 'chopping') {
           this.issue('MINOR', `Worker ${w.idx} stuck ${STUCK_LIMIT/1000}s (state=${w.workerState}, moved=${moved.toFixed(0)}px)`);
         }
         this.workerPrev.set(key, { x: w.lx, y: w.ly, t: Date.now() });

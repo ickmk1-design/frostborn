@@ -1897,15 +1897,19 @@ export default class GameScene extends Phaser.Scene {
         }
       }
 
-      // ── Animal-animal separation ────────────────────────────────────────────
-      // Wolves piled on top of each other during circling. Push each pair apart
-      // when centres are closer than the animal body radius; skips dead/flee
-      // and lunge (letting wolves commit to the bite without being nudged aside).
-      if (a.state !== 'lunge' && a.state !== 'flee') {
-        const sepR = Math.max(32, a.displaySize * 0.42);
+      // ── Animal-animal separation (roam-only) ────────────────────────────
+      // Only spread wolves while they're idle-wandering. Pre-Wave-4 wolves
+      // clustered near the player; spreading them during circle/windup/lunge
+      // scattered them across choke-points on L9 and the bot could no longer
+      // reach deep-south survivors in time. Restricting sep to 'roam' keeps
+      // the visual anti-overlap for idle packs and reproduces pre-Wave-4
+      // combat positioning.
+      if (a.state === 'roam') {
+        const sepR = Math.max(24, a.displaySize * 0.30);
         const sepR2 = sepR * sepR;
         for (const b of this.animals) {
           if (b === a) continue;
+          if (b.state === 'lunge' || b.state === 'flee') continue;
           const dxs = a.lx - b.lx; const dys = a.ly - b.ly;
           const d2s = dxs*dxs + dys*dys;
           if (d2s < sepR2 && d2s > 0.01) {
