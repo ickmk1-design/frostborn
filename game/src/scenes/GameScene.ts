@@ -1845,7 +1845,20 @@ export default class GameScene extends Phaser.Scene {
           a.lungeTargetX = bestTx; a.lungeTargetY = bestTy;
           a.huntTargetIdx = bestIdx;
           // Trigger flee on the targeted worker.
-          if (bestIdx >= 0) this.survivors[bestIdx].workerState = 'fleeing';
+          if (bestIdx >= 0) {
+            const fleeWorker = this.survivors[bestIdx];
+            fleeWorker.workerState = 'fleeing';
+            // Release the station — unmanned stations pause until another worker clocks in
+            // ("stations pause while unmanned"). Drop any hauled item too.
+            if (fleeWorker.workerStation) {
+              fleeWorker.workerStation.workerId = -1;
+              fleeWorker.workerStation = null;
+            }
+            if (fleeWorker.workerHaulId) {
+              fleeWorker.workerHaulId = null;
+              fleeWorker.workerHaulDest = null;
+            }
+          }
         }
       }
 
