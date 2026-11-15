@@ -53,7 +53,7 @@ interface Survivor {
   workerStation?: StationInstance | null;
   workerHaulId?: ResourceId | null;    // resource being hauled; null when not hauling
   workerHaulDest?: { kind: 'fire' } | { kind: 'station'; station: StationInstance } | null;
-  carrySprite?: Phaser.GameObjects.Image | null;  // tiny item sprite rendered above head while hauling
+  carrySprites?: Phaser.GameObjects.Image[];  // stacked item sprites held in front of body while hauling
   bobOffset: number;
   lx: number; ly: number;
   waddlePhase: number;
@@ -1369,17 +1369,24 @@ export default class GameScene extends Phaser.Scene {
       }
     }
 
-    // Log icons stacked on player's back, synced with bob
-    const backOffX = (this.playerLastDir >= 2 && this.playerLastDir <= 4) ? 6 : -6;
+    // Log icons stacked IN FRONT of the player (direction-aware), synced with bob.
+    // 8-dir facing → front offset vector. Stack grows upward 1-N like the ads.
+    const dirAng = (this.playerLastDir / 8) * Math.PI * 2 + Math.PI / 2; // dir0=down
+    const fX = Math.cos(dirAng) * 18;
+    const fY = Math.sin(dirAng) * 12 + 4;
     for (let i = 0; i < 4; i++) {
       this.logIcons[i].setVisible(i < this.carriedLogs);
       if (i < this.carriedLogs) {
         this.logIcons[i].setPosition(
-          this.playerLX + backOffX,
-          this.playerLY + this.playerBobY - 58 - i * 14,
+          this.playerLX + fX,
+          this.playerLY + this.playerBobY - CHAR_SIZE * 0.4 + fY - i * 10,
         );
-        this.logIcons[i].setDepth(this.playerSprite.depth - 1 + i);
+        this.logIcons[i].setDepth(this.playerSprite.depth + 20 + i);
       }
+    }
+    // Keep hero animation on carry_walk while carrying logs (not just walk).
+    if (this.carriedLogs > 0 && this.playerAttackMs <= 0 && isMoving) {
+      this.playCharAnim(this.playerSprite, 'hero', 'carry_walk', this.playerLastDir);
     }
 
     this.dropZoneGfx.setVisible(this.carriedLogs > 0 || this.carriedMeat > 0);
@@ -2320,24 +2327,39 @@ export default class GameScene extends Phaser.Scene {
     }
   }
 
-  // Maintain a small item sprite above the worker's head while hauling.
-  // Called from updateWorker each tick AFTER movement has been applied.
+  // Stacked item sprites held IN FRONT of the worker's body while hauling.
+  // Uses the real resource art (resource_fish_raw_01, resource_plank_01, etc.)
+  // with carry_walk anim driven by the `activeAnim = 'carry_walk'` set in the
+  // haul branch. Stack height scales with haul count (currently 1 per worker,
+  // reads as 1-N when carrying is expanded).
   private syncCarrySprite(w: Survivor): void {
     const haulId = w.workerHaulId ?? null;
-    if (!haulId) {
-      if (w.carrySprite) { w.carrySprite.destroy(); w.carrySprite = null; }
-      return;
+    const n = haulId ? 1 : 0;            // workers carry 1 unit per haul cycle
+    if (!w.carrySprites) w.carrySprites = [];
+    // Destroy excess sprites
+    while (w.carrySprites.length > n) {
+      const sp = w.carrySprites.pop(); if (sp) sp.destroy();
     }
-    const key = this.resourceSpriteKey(haulId);
+    if (n === 0) return;
+    const key = this.resourceSpriteKey(haulId!);
     if (!key || !this.textures.exists(key)) return;
-    if (!w.carrySprite) {
-      w.carrySprite = this.add.image(w.lx, w.ly - CHAR_SIZE - 6, key)
-        .setDisplaySize(22, 22).setOrigin(0.5, 1).setDepth(w.sprite.depth + 20);
-    } else {
-      w.carrySprite.x = w.lx;
-      w.carrySprite.y = w.ly - CHAR_SIZE - 6;
-      w.carrySprite.setDepth(w.sprite.depth + 20);
+    // Front-of-body offset based on facing direction (8 dirs).
+    const ang = (w.lastDir / 8) * Math.PI * 2 + Math.PI / 2;  // dir 0 = down
+    const fx = Math.cos(ang) * 16;
+    const fy = Math.sin(ang) * 10 + CHAR_SIZE * 0.1;
+    for (let i = 0; i < n; i++) {
+      if (!w.carrySprites[i]) {
+        w.carrySprites[i] = this.add.image(0, 0, key)
+          .setDisplaySize(22, 22).setOrigin(0.5, 0.8).setDepth(w.sprite.depth + 20 + i);
+      }
+      const sp = w.carrySprites[i];
+      sp.setTexture(key);
+      sp.x = w.lx + fx;
+      sp.y = w.ly + w.waddleBobY - CHAR_SIZE * 0.4 - i * 8 + fy;
+      sp.setDepth(w.sprite.depth + 20 + i);
     }
+    // Ensure carry_walk anim plays (worker atlas has it).
+    if (w.activeAnim !== 'carry_walk') w.activeAnim = 'carry_walk';
   }
 
   private updateWorker(w: Survivor, dt: number, delta: number): void {
