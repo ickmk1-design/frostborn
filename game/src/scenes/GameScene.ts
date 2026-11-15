@@ -2368,20 +2368,31 @@ export default class GameScene extends Phaser.Scene {
 
     switch (w.workerState) {
       case 'fleeing': {
-        // Sprint to the fire; return to idle once inside the safe ring AND no
-        // hostile wolf is physically close. We check distance (not stale
-        // huntTargetIdx) so the worker never stays locked in flee after the
-        // wolf has already moved on to another target.
+        // Sprint toward the fire using the SAME wall-aware navigation as 'toFire'
+        // so workers can path through the palisade gate. Direct movement was
+        // getting stuck on walls (L6 fishing workers at south stations).
         const dxF = this.fireX - w.lx; const dyF = this.fireY - w.ly;
         const dF = Math.sqrt(dxF*dxF + dyF*dyF);
         if (dF > 55) {
           const fleeSpeed = cfg.workerWalkSpeed * WORKER_SPEED_MULT * 1.5;
-          w.lx += (dxF / dF) * fleeSpeed * dt;
-          w.ly += (dyF / dF) * fleeSpeed * dt;
+          const wvF = this.projectVelocityFromWalls((dxF/dF)*fleeSpeed, (dyF/dF)*fleeSpeed, w.lx, w.ly);
+          w.lx += wvF.vx * dt; w.ly += wvF.vy * dt;
           const toFireDir = this.velToDir(dxF, dyF);
           if (toFireDir >= 0) w.lastDir = toFireDir;
           w.activeAnim = 'walk';
           this.applyCharWaddle(w, dt, true);
+          // Safety: if blocked (stuck 3 s with <10 px progress), drop fleeing.
+          w.stuckMs += delta;
+          if (w.stuckMs >= 3000) {
+            const movedSq = (w.lx - w.stuckCheckX) ** 2 + (w.ly - w.stuckCheckY) ** 2;
+            if (movedSq < 100) {
+              // Blocked path (e.g. wall corner) — just go idle so the main
+              // loop re-routes via the proper toTree / toStation pathing.
+              w.workerState = 'idle'; w.stuckMs = 0;
+            } else {
+              w.stuckMs = 0; w.stuckCheckX = w.lx; w.stuckCheckY = w.ly;
+            }
+          }
         } else {
           // Safe at fire. Any wolf within 1.5× aggroRange still counts as hostile
           // and keeps the worker huddled; otherwise go back to idle.
@@ -2391,13 +2402,12 @@ export default class GameScene extends Phaser.Scene {
             (a.lx - w.lx) ** 2 + (a.ly - w.ly) ** 2 <
               (a.spec.aggroRange * 1.5) ** 2,
           );
-          if (!stillClose) w.workerState = 'idle';
+          if (!stillClose) { w.workerState = 'idle'; w.stuckMs = 0; }
         }
-        // Still apply obstacle constraints
         const soCo = this.constrainToObstacles(w.lx, w.ly);
         const soWc = this.wallConstrain(prevLxW, prevLyW, soCo.x, soCo.y);
         w.lx = soWc.x; w.ly = soWc.y;
-        return; // skip other case movement
+        return;
       }
       case 'idle': {
         // Station runtime: if this level has stations[], prefer them over trees.
@@ -2440,10 +2450,8 @@ export default class GameScene extends Phaser.Scene {
           w.stuckMs = 0;
           const kind = st.cfg.kind;
           w.activeAnim = (kind === 'ice_hole' || kind === 'butcher_table' || kind === 'lumber_mill') ? 'chop' : 'idle';
-          // Face the station
           const toStDir = this.velToDir(st.sx - w.lx, st.sy - w.ly);
           if (toStDir >= 0) w.lastDir = toStDir;
-          // Start a cycle timer
           st.cycleMs = st.cfg.cycleMs ?? DEFAULT_CYCLE_MS[st.cfg.kind] ?? 4000;
         } else {
           const wvSt = this.projectVelocityFromWalls(

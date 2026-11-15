@@ -21,18 +21,18 @@ export type StationKind =
   | 'supply_sled'     // ground meat + planks → coins
   | 'watchtower';     // lookout fires arrows + applies slow
 
-// Priority classes — lower number = higher priority. Matches
-// "fire > food > production > export" from the approved design doc.
+// Priority — lower = picked first. Gatherers come first in the chain so
+// consumers never starve. Intermediates next, finishers last.
 export const STATION_PRIORITY: Record<StationKind, number> = {
-  fire:            0,  // feeding the fire is always top priority
-  cook_pot:        1,  // food
-  cleaning_table:  1,  // food
-  butcher_table:   2,  // production
-  meat_grinder:    2,  // production
-  lumber_mill:     2,  // production
-  ice_hole:        2,  // production (gathering)
-  watchtower:      2,  // production (defence)
-  supply_sled:     3,  // export (payout)
+  fire:            0,  // fire-feeding is top (legacy log loop)
+  ice_hole:        1,  // gather raw material (fish)
+  lumber_mill:     1,  // gather raw material (planks from logs)
+  butcher_table:   1,  // gather raw material (meat from carcass)
+  cleaning_table:  2,  // intermediate (raw fish → clean fish)
+  meat_grinder:    2,  // intermediate (raw meat → ground meat)
+  cook_pot:        3,  // finisher (clean fish / raw meat → cooked food)
+  watchtower:      2,  // defence
+  supply_sled:     4,  // export (payout)
 };
 
 // Config entry read straight from level JSON (`cfg.stations[]`).
