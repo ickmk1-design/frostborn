@@ -123,7 +123,7 @@ async function readState(page) {
         state: s.state, lx: s.lx, ly: s.ly, stuckMs: s.stuckMs ?? 0,
       })),
       animals: (sc.animals ?? []).map(a => ({
-        state: a.state, lx: a.lx, ly: a.ly, hp: a.hp,
+        state: a.state, lx: a.lx, ly: a.ly, hp: a.hp, huntTargetIdx: a.huntTargetIdx ?? -1,
       })),
       workers: (sc.survivors ?? []).filter(s => s.state === 'worker').map((s, i) => ({
         idx: i, workerState: s.workerState, lx: s.lx, ly: s.ly,
@@ -295,9 +295,41 @@ class Bot {
       case 'buildStructure':  await this.doBuild(stage, state);  break;
       case 'huntAnimals':     await this.doHunt(stage, state);   break;
       case 'collectLogs':     await this.doCollectLogs(stage, state); break;
+      case 'fishCaught':
+      case 'cookedServed':
+        await this.doTendAndDefend(stage, state);
+        break;
       default:
         // Unknown — stay near fire
         await this.navigateTo(state, this.firePos.x, this.firePos.y, 600);
+    }
+  }
+
+  // Station-production stages (fishCaught, cookedServed): hero tends the fire
+  // but ALSO intercepts any wolf that aggros onto a worker — real players
+  // defend their fishermen; the bot must too, otherwise the chain deadlocks.
+  async doTendAndDefend(stage, state) {
+    // Hostile wolf hunting a worker? Go kill it first.
+    const hunter = (state.animals ?? []).find(a =>
+      a.state !== 'dead' && a.state !== 'flee' && (a.huntTargetIdx ?? -1) >= 0,
+    );
+    if (hunter) {
+      const d = dist(state.playerLX, state.playerLY, hunter.lx, hunter.ly);
+      if (d > 60) {
+        await this.navigateTo(state, hunter.lx, hunter.ly, Math.min(1800, d * 8));
+      } else {
+        // Attack range — stand still so hero auto-chops.
+        await this.page.waitForTimeout(220);
+      }
+      return;
+    }
+    // No hunter — top up fuel when low, otherwise idle by the fire.
+    const fuelPct = state.fuel / this.fuelMax;
+    if (fuelPct < 0.6) {
+      await this.fireCycle(state, 1200, 1200);
+    } else {
+      await this.navigateTo(state, this.firePos.x, this.firePos.y + 40, 700);
+      await this.page.waitForTimeout(400);
     }
   }
 
@@ -453,7 +485,7 @@ class Bot {
         this.workerPrev.set(key, { x: w.lx, y: w.ly, t: Date.now() });
       } else if (Date.now() - prev.t >= STUCK_LIMIT) {
         const moved = dist(prev.x, prev.y, w.lx, w.ly);
-        if (moved < 8 && w.workerState !== 'chopping') {
+        if (moved < 8 && w.workerState !== 'chopping' && w.workerState !== 'atStation' && w.workerState !== 'fleeing') {
           this.issue('MINOR', `Worker ${w.idx} stuck ${STUCK_LIMIT/1000}s (state=${w.workerState}, moved=${moved.toFixed(0)}px)`);
         }
         this.workerPrev.set(key, { x: w.lx, y: w.ly, t: Date.now() });

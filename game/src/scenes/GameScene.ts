@@ -54,6 +54,7 @@ interface Survivor {
   workerHaulId?: ResourceId | null;    // resource being hauled; null when not hauling
   workerHaulDest?: { kind: 'fire' } | { kind: 'station'; station: StationInstance } | null;
   carrySprites?: Phaser.GameObjects.Image[];  // stacked item sprites held in front of body while hauling
+  fleeMs?: number;                 // ms remaining of forced huddle-at-fire while fleeing
   bobOffset: number;
   lx: number; ly: number;
   waddlePhase: number;
@@ -1794,6 +1795,21 @@ export default class GameScene extends Phaser.Scene {
           a.biteMs = a.spec.biteIntervalMs;
           this.hitPlayer(a);
           a.state = 'backoff'; a.stateTimer = 500;
+          a.huntTargetIdx = -1;
+        } else if (a.huntTargetIdx >= 0 && (a.stateTimer <= 0 || llen < 8)) {
+          // Wolf lunged at a worker and reached/timed out. One attempt only.
+          // If the hero is within 250 px, immediately switch to hunting the hero.
+          // Otherwise retreat (backoff) and clear the worker target so the
+          // wolf doesn't spin up another worker-hunt on the next tick.
+          if (distToPlayer < 250) {
+            a.state = 'windup';
+            a.stateTimer = a.spec.windupMs;
+            a.lungeTargetX = this.playerLX; a.lungeTargetY = this.playerLY;
+            a.huntTargetIdx = -1;
+          } else {
+            a.state = 'backoff'; a.stateTimer = 600;
+            a.huntTargetIdx = -1;
+          }
         } else if (a.stateTimer <= 0 || llen < 8) {
           // Missed or timer expired — back off
           a.state = 'backoff'; a.stateTimer = 450;
@@ -1828,21 +1844,23 @@ export default class GameScene extends Phaser.Scene {
         // until the hero clears the wolves — "Wolves at the Lake" (Wave 4).
         let bestTx = this.playerLX, bestTy = this.playerLY, bestIdx = -1;
         let bestD2 = (this.playerLX - a.lx)**2 + (this.playerLY - a.ly)**2;
-        for (let wi = 0; wi < this.survivors.length; wi++) {
-          const w = this.survivors[wi];
-          if (w.state !== 'worker') continue;
-          if (w.workerState === 'fleeing') continue;
-          // Only target workers that are MANNING A STATION or hauling from one.
-          // Legacy tree-chop workers were never hunted pre-Wave-4 and must stay
-          // safe on levels that use trees (L1-L15 current). Fishing / crafting
-          // workers at a station are fair game — this is "Wolves at the Lake".
-          if (w.workerState !== 'atStation' && w.workerState !== 'haul') continue;
-          // Don't hunt workers already at the fire (safe zone, radius ~85 px).
-          const fdx = w.lx - this.fireX, fdy = w.ly - this.fireY;
-          if (fdx*fdx + fdy*fdy < 85*85) continue;
-          const d2 = (w.lx - a.lx)**2 + (w.ly - a.ly)**2;
-          if (d2 < bestD2 && d2 < (a.spec.aggroRange * 1.2)**2) {
-            bestD2 = d2; bestTx = w.lx; bestTy = w.ly; bestIdx = wi;
+        // Rule: max 1 wolf hunts workers at a time. If any OTHER wolf already
+        // has a worker target, this wolf must go after the player.
+        const anotherHunting = this.animals.some(b =>
+          b !== a && b.state !== 'dead' && b.huntTargetIdx >= 0,
+        );
+        if (!anotherHunting) {
+          for (let wi = 0; wi < this.survivors.length; wi++) {
+            const w = this.survivors[wi];
+            if (w.state !== 'worker') continue;
+            if (w.workerState === 'fleeing') continue;
+            if (w.workerState !== 'atStation' && w.workerState !== 'haul') continue;
+            const fdx = w.lx - this.fireX, fdy = w.ly - this.fireY;
+            if (fdx*fdx + fdy*fdy < 85*85) continue;
+            const d2 = (w.lx - a.lx)**2 + (w.ly - a.ly)**2;
+            if (d2 < bestD2 && d2 < (a.spec.aggroRange * 1.2)**2) {
+              bestD2 = d2; bestTx = w.lx; bestTy = w.ly; bestIdx = wi;
+            }
           }
         }
         if (bestD2 < a.spec.aggroRange * a.spec.aggroRange) {
@@ -1855,8 +1873,11 @@ export default class GameScene extends Phaser.Scene {
           if (bestIdx >= 0) {
             const fleeWorker = this.survivors[bestIdx];
             fleeWorker.workerState = 'fleeing';
-            // Release the station — unmanned stations pause until another worker clocks in
-            // ("stations pause while unmanned"). Drop any hauled item too.
+            // 8-second huddle at fire — prevents an instant re-flee loop when the
+            // same wolf is still alive and roaming nearby after the worker came
+            // back out. Worker returns to its station after the timer OR when the
+            // hunting wolf is dead.
+            fleeWorker.fleeMs = 8000;
             if (fleeWorker.workerStation) {
               fleeWorker.workerStation.workerId = -1;
               fleeWorker.workerStation = null;
@@ -2394,15 +2415,16 @@ export default class GameScene extends Phaser.Scene {
             }
           }
         } else {
-          // Safe at fire. Any wolf within 1.5× aggroRange still counts as hostile
-          // and keeps the worker huddled; otherwise go back to idle.
-          const HOSTILE_STATES = new Set(['windup', 'lunge', 'circle', 'backoff']);
-          const stillClose = this.animals.some(a =>
-            a.state !== 'dead' && a.state !== 'flee' && HOSTILE_STATES.has(a.state) &&
-            (a.lx - w.lx) ** 2 + (a.ly - w.ly) ** 2 <
-              (a.spec.aggroRange * 1.5) ** 2,
+          // Safe at fire. Count down the 8 s huddle timer; worker returns to
+          // idle when the timer hits 0 OR when no wolf is physically hunting
+          // anyone (huntTargetIdx < 0 across all live animals).
+          w.fleeMs = Math.max(0, (w.fleeMs ?? 0) - delta);
+          const noHunters = this.animals.every(a =>
+            a.state === 'dead' || a.state === 'flee' || a.huntTargetIdx < 0,
           );
-          if (!stillClose) { w.workerState = 'idle'; w.stuckMs = 0; }
+          if (w.fleeMs <= 0 || noHunters) {
+            w.workerState = 'idle'; w.stuckMs = 0; w.fleeMs = 0;
+          }
         }
         const soCo = this.constrainToObstacles(w.lx, w.ly);
         const soWc = this.wallConstrain(prevLxW, prevLyW, soCo.x, soCo.y);
