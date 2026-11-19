@@ -183,6 +183,11 @@ export default class GameScene extends Phaser.Scene {
   private stations: StationInstance[] = [];
   private fireSprite!: Phaser.GameObjects.Image;
   private fireX = 0; private fireY = 0;
+  // Centroid of all station sprites (visual bias for camera lerp when hero
+  // is near the fire — used so signature structures sit above the camp).
+  private _stationsCentroidX = 0;
+  private _stationsCentroidY = 0;
+  private _hasStationsCentroid = false;
   private survivors: Survivor[] = [];
   private nextWorkerTreeIndex = 0;
   private nextWorkerSlot = 0;
@@ -632,7 +637,57 @@ export default class GameScene extends Phaser.Scene {
       'prop_rock_cluster_01': 90, 'prop_snow_bush_01': 75, 'prop_cliff_edge_01': 100,
       'prop_lantern_post_01': 65,
     };
+    // agentB round2 — sparse `tile_water_frozen_01` tiles leave gaps between
+    // them, which reads as scattered diamonds rather than a lake. Fill a soft
+    // convex hull behind the water tiles in ice-blue, then draw the tiles on
+    // top for texture detail. Depth -3 sits above snow (-10/-9) and camp
+    // floor (-5), but below all decor sprites (which use depthGroup y-depth).
     if ((cfg as any).decor) {
+      const waterPts: Array<{ x: number; y: number }> = [];
+      for (const d of (cfg as any).decor as Array<{ key: string; iso: [number, number] }>) {
+        if (d.key !== 'tile_water_frozen_01') continue;
+        const wp = isoToScreen(d.iso[0], d.iso[1], ox, oy);
+        waterPts.push(wp);
+      }
+      if (waterPts.length >= 3) {
+        // Andrew monotone-chain convex hull — small N, in-place sort is fine.
+        const pts = waterPts.slice().sort((a, b) => a.x - b.x || a.y - b.y);
+        const cross = (o: { x: number; y: number }, a: { x: number; y: number }, b: { x: number; y: number }) =>
+          (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+        const lower: Array<{ x: number; y: number }> = [];
+        for (const p of pts) {
+          while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+          lower.push(p);
+        }
+        const upper: Array<{ x: number; y: number }> = [];
+        for (let i = pts.length - 1; i >= 0; i--) {
+          const p = pts[i];
+          while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+          upper.push(p);
+        }
+        const hull = lower.slice(0, -1).concat(upper.slice(0, -1));
+        // Centroid for the pad outward — expand the hull ~40 px so the ice-blue
+        // fill reaches beyond the outermost water tile centres.
+        let cx = 0, cy = 0;
+        for (const h of hull) { cx += h.x; cy += h.y; }
+        cx /= hull.length; cy /= hull.length;
+        const EXPAND = 44;
+        const padded = hull.map(h => {
+          const vx = h.x - cx; const vy = h.y - cy;
+          const vl = Math.max(1, Math.sqrt(vx * vx + vy * vy));
+          return { x: h.x + (vx / vl) * EXPAND, y: h.y + (vy / vl) * EXPAND };
+        });
+        const lakeGfx = this.add.graphics().setDepth(-3);
+        lakeGfx.fillStyle(0x7fb8d8, 0.85).fillPoints(padded as any, true);
+        lakeGfx.lineStyle(2, 0xbfe4f3, 0.55).strokePoints(padded as any, true);
+        // Soft inner highlight for a bit of lake sheen.
+        const innerPts = padded.map(h => {
+          const vx = h.x - cx; const vy = h.y - cy;
+          const vl = Math.max(1, Math.sqrt(vx * vx + vy * vy));
+          return { x: h.x - (vx / vl) * 18, y: h.y - (vy / vl) * 18 };
+        });
+        lakeGfx.fillStyle(0xaad8ee, 0.28).fillPoints(innerPts as any, true);
+      }
       for (const d of (cfg as any).decor as Array<{ key: string; iso: [number, number] }>) {
         const [dx, dy] = d.iso;
         const dp = isoToScreen(dx, dy, ox, oy);
@@ -926,8 +981,12 @@ export default class GameScene extends Phaser.Scene {
         const displayScale = spec.displayScale ?? 1;
         const baseSize = atlasKey === 'deer' ? 136 : atlasKey === 'stag' ? 148 : WOLF_TYPES.has(charType) ? 144 : 80;
         const displaySize = Math.round(baseSize * displayScale);
+        // agentB round2 — stag origin 0.92→0.95 so feet touch the shadow on
+        // standing frames; deer stays 1.0. Shadow scales get an extra boost
+        // for stags since antlers push the sprite centre further up.
+        const spOriginY = atlasKey === 'stag' ? 0.95 : 1.0;
         const sp = hasAtlas
-          ? this.add.sprite(pos.x, pos.y, atlasKey, `${atlasKey}_walk_d0_f0`).setDisplaySize(displaySize, displaySize).setOrigin(0.5, atlasKey === 'stag' ? 0.92 : 1.0)
+          ? this.add.sprite(pos.x, pos.y, atlasKey, `${atlasKey}_walk_d0_f0`).setDisplaySize(displaySize, displaySize).setOrigin(0.5, spOriginY)
           : this.add.sprite(pos.x, pos.y, 'enemy_grey_wolf_01').setDisplaySize(displaySize > 80 ? displaySize : 70, displaySize > 80 ? displaySize : 70).setOrigin(0.5, 1.0);
         this.depthGroup.push(sp);
         const baseTint = spec.furTint ?? 0xffffff;
@@ -937,8 +996,10 @@ export default class GameScene extends Phaser.Scene {
         // Per-animal shadow (dynamic — moves + scales with animal)
         const shadowBaseForScale = atlasKey === 'deer' ? 136 : atlasKey === 'stag' ? 148 : 144;
         const shScale = displaySize / shadowBaseForScale;
+        const shadowW = atlasKey === 'stag' ? 68 : 54;  // stag: wider pad
+        const shadowH = atlasKey === 'stag' ? 24 : 20;
         const animalShadow = this.add.image(pos.x, pos.y, 'entity_shadow')
-          .setDisplaySize(54 * shScale, 20 * shScale).setDepth(2);
+          .setDisplaySize(shadowW * shScale, shadowH * shScale).setDepth(2);
         const animal: AnimalEntity = {
           sprite: sp, shadow: animalShadow, atlasKey, baseTint, isBoss, eyeGlow, summonedMinions: false, displaySize,
           hp: spec.hp, maxHp: spec.hp,
@@ -1011,8 +1072,12 @@ export default class GameScene extends Phaser.Scene {
     // ── Misc ──────────────────────────────────────────────────────────────
     this.hintArrowGfx = this.add.graphics().setDepth(1100);
 
-    // ── Camera — zoom=0.7, bounds from actual level content ───────────────
-    this.cameras.main.setZoom(0.7);
+    // ── Camera — zoom=0.78, tighter bounds around meaningful content ──────
+    // agentB round2: PAD was 500 → camp read as tiny speck. Dropped to 180 and
+    // the bounds now include stations + animals iso so the camera can't scroll
+    // out into empty snow voids. Zoom bumped 0.70 → 0.78 so signature
+    // structures (mill, butcher row, watchtower) read clearly on screenshots.
+    this.cameras.main.setZoom(0.78);
     {
       const allIso: [number, number][] = [
         ...(cfg.walls as [number, number][]),
@@ -1032,7 +1097,7 @@ export default class GameScene extends Phaser.Scene {
         if (p.y < minY) minY = p.y;
         if (p.y > maxY) maxY = p.y;
       }
-      const PAD = 500;
+      const PAD = 180;
       this.cameras.main.setBounds(
         minX - PAD, minY - PAD,
         (maxX - minX) + PAD * 2,
@@ -1045,6 +1110,21 @@ export default class GameScene extends Phaser.Scene {
         minX: minX - NAV_PAD, minY: minY - NAV_PAD,
         maxX: maxX + NAV_PAD, maxY: maxY + NAV_PAD,
       });
+
+      // ── Stations centroid (used by signature-structure camera bias below).
+      const sts = ((cfg as any).stations ?? []) as Array<{ iso: [number, number] }>;
+      if (sts.length > 0) {
+        let sx = 0, sy = 0;
+        for (const s of sts) {
+          const p = isoToScreen(s.iso[0], s.iso[1], ox, oy);
+          sx += p.x; sy += p.y;
+        }
+        this._stationsCentroidX = sx / sts.length;
+        this._stationsCentroidY = sy / sts.length;
+        this._hasStationsCentroid = true;
+      } else {
+        this._hasStationsCentroid = false;
+      }
     }
     this.cameras.main.startFollow(this.playerSprite, true, 0.08, 0.08);
 
@@ -1310,6 +1390,28 @@ export default class GameScene extends Phaser.Scene {
     if (this.gameOver) return;
     const dt = delta / 1000;
     this.sceneTimeMs += delta;
+
+    // agentB round2 — signature-structure camera bias. When the hero is close
+    // to the fire the stations usually sit off-centre (e.g. L7 mill at [9,9]
+    // while hero + fire are at [8,7]). Apply a camera follow offset pointing
+    // *away* from the stations centroid (so the camera drifts toward the
+    // stations — a negative offset moves the lens with the content). Strength
+    // ramps 1 → 0 as hero moves > 260px away from the fire, so free-roam
+    // still gets a hero-locked camera.
+    if (this._hasStationsCentroid) {
+      const cam = this.cameras.main;
+      const dxf = this.playerLX - this.fireX;
+      const dyf = this.playerLY - this.fireY;
+      const distToFire = Math.sqrt(dxf*dxf + dyf*dyf);
+      const NEAR = 180; const FAR = 420;
+      const near01 = distToFire < NEAR ? 1 : distToFire > FAR ? 0 : 1 - (distToFire - NEAR) / (FAR - NEAR);
+      // Direction from fire toward stations centroid (what we want to reveal).
+      const bx = this._stationsCentroidX - this.fireX;
+      const by = this._stationsCentroidY - this.fireY;
+      const bias = 110 * near01; // up to 110 px of camera lead toward the stations
+      const bLen = Math.max(1, Math.sqrt(bx*bx + by*by));
+      cam.setFollowOffset(-(bx / bLen) * bias, -(by / bLen) * bias);
+    }
 
     // Watchtower — fires arrows at nearest live wolf within range.
     // No worker required — tower is "manned" by its lookout sprite as soon as
@@ -3063,6 +3165,18 @@ export default class GameScene extends Phaser.Scene {
     w.activeAnim = w.workerCarrying > 0 ? 'carry_walk' : 'walk';
     const animOverride = w.workerState === 'chopping' ? 'chop' : undefined;
     this.applyCharWaddle(w, dt, workerMoving, animOverride);
+    // agentB round2 — visual-only station slot offset so multiple workers
+    // sitting atStation don't stack into a single sprite. Pure cosmetic (does
+    // not touch w.lx / w.ly, so station production + arrival logic is
+    // untouched). workerSlot % 4 → 4 angular positions around the station.
+    if (w.workerState === 'atStation' && w.workerStation) {
+      const st = w.workerStation;
+      const slot = ((w.workerSlot % 4) + 4) % 4;
+      const ang = slot * (Math.PI / 2) + Math.PI * 0.25; // 45°, 135°, 225°, 315°
+      const OFF = 18;
+      w.sprite.x = st.sx + Math.cos(ang) * OFF;
+      w.sprite.y = st.sy + Math.sin(ang) * OFF + w.waddleBobY;
+    }
     w.sprite.setDepth(w.sprite.y);
   }
 
