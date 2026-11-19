@@ -1,0 +1,62 @@
+[
+  {
+    "lang": "en-US",
+    "type": "icon",
+    "status": "already-up-to-date",
+    "images": [
+      {
+        "id": "15188110775698961722",
+        "url": "https://lh3.googleusercontent.com/N_zynZ3Y6-OdHcB9Xj4S1ILPBNS5ehonhhazxobFz73IKD4pwrjVQQQszlnQsFKQIIDx",
+        "sha1": "034100647bd5c72ce07c9090d2e3af3d1688ab22",
+        "sha256": "0c9324a85fcf5c041801e678c1c64dd82bc9485e81d8777bc003af559aba9dd9",
+        "aiGeneratedState": "aiGeneratedStateUnspecified"
+      }
+    ]
+  },
+  {
+    "lang": "en-US",
+    "type": "featureGraphic",
+    "status": "already-up-to-date",
+    "images": [
+      {
+        "id": "1734893856890760425",
+        "url": "https://lh3.googleusercontent.com/GbHp2gwC99BIZIm2ufiaOGxApVI-w3Qbwu8r7HZdboPlq7lwj5yVo8yHoMg1o40Bjkg",
+        "sha1": "8e8852a95f0d32613de70e4b8885872bbf2bcd2b",
+        "sha256": "562aa4e3a9adad605bb3a0c8ff3c4fe26510375c8534b71815f88298adff10ba",
+        "aiGeneratedState": "aiGeneratedStateUnspecified"
+      }
+    ]
+  },
+  {
+    "lang": "tr-TR",
+    "type": "icon",
+    "upload": {
+      "s": 200,
+      "body": {
+        "image": {
+          "id": "11056273239381412769",
+          "url": "https://lh3.googleusercontent.com/h8_Eg89J-YxpdZgZKdf_JWLV75blqrc65CAsYvjJ_hhYGdIrcWpprQ5CUpRyMmvTB8Mj",
+          "sha1": "034100647bd5c72ce07c9090d2e3af3d1688ab22",
+          "sha256": "0c9324a85fcf5c041801e678c1c64dd82bc9485e81d8777bc003af559aba9dd9",
+          "aiGeneratedState": "aiGeneratedStateUnspecified"
+        }
+      }
+    }
+  },
+  {
+    "lang": "tr-TR",
+    "type": "featureGraphic",
+    "upload": {
+      "s": 200,
+      "body": {
+        "image": {
+          "id": "12783993128006502299",
+          "url": "https://lh3.googleusercontent.com/g-sxgi-hKWcesDRRBSu9mWAbSiIqiMF4ZoFsSke2wNX1q6KprX6fu9KcNHdFp86ESPgm",
+          "sha1": "8e8852a95f0d32613de70e4b8885872bbf2bcd2b",
+          "sha256": "562aa4e3a9adad605bb3a0c8ff3c4fe26510375c8534b71815f88298adff10ba",
+          "aiGeneratedState": "aiGeneratedStateUnspecified"
+        }
+      }
+    }
+  }
+]

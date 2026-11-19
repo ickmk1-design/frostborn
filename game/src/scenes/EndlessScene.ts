@@ -21,6 +21,7 @@ const MAP = {
 
 // ── Wave design ────────────────────────────────────────────────────────────────
 const WAVE_DURATION_SEC = 120;        // 2 min per wave
+const ENDLESS_STATIONS_WAVE = 5;      // wave 5: watchtowers unlock as a village-tier reward
 const WOLF_BASE_COUNT = 3;
 const WOLVES_PER_WAVE = 1;            // +1 wolf / wave (round robin w/ +2 occasionally)
 const FUEL_DRAIN_WAVE_MUL = 1.15;     // per wave
@@ -148,6 +149,10 @@ export default class EndlessScene extends Phaser.Scene {
   private survivors: Survivor[] = [];
   private wolves: Wolf[] = [];
   private depthGroup: Array<Phaser.GameObjects.Image | Phaser.GameObjects.Sprite> = [];
+
+  // Wave 13 — Endless stations: two watchtowers auto-fire at wolves once the
+  // village has survived ENDLESS_STATIONS_WAVE. Passive — no worker needed.
+  private endlessTowers: Array<{ sprite: Phaser.GameObjects.Image; cycleMs: number; }> = [];
 
   private coins = 0;
   private fuel = INITIAL_FUEL;
@@ -619,6 +624,20 @@ export default class EndlessScene extends Phaser.Scene {
   private startWave(): void {
     this.waveNum++;
 
+    // Wave 13 — on the ENDLESS_STATIONS_WAVE, spawn two watchtowers flanking
+    // the fire. They auto-fire arrows at wolves in the tick loop (see update).
+    if (this.waveNum === ENDLESS_STATIONS_WAVE && this.endlessTowers.length === 0) {
+      const spots: Array<[number, number]> = [[-180, -140], [180, -140]];
+      for (const [dx, dy] of spots) {
+        const spr = this.add.image(this.fireX + dx, this.fireY + dy, 'building_watchtower_01')
+          .setDisplaySize(110, 110).setOrigin(0.5, 0.85);
+        this.depthGroup.push(spr);
+        this.endlessTowers.push({ sprite: spr, cycleMs: 0 });
+      }
+      this.waveBanner.setText('STATIONS UNLOCKED');
+      this.waveBannerMs = 2200;
+    }
+
     // Award end-of-previous-wave coin bonus (for the wave the player survived)
     if (this.waveNum > 1) {
       const bonus = 10 + Math.min(20, (this.waveNum - 1) * 2);
@@ -827,6 +846,34 @@ export default class EndlessScene extends Phaser.Scene {
     const dt = delta / 1000;
     this.sceneTimeMs += delta;
     this.survivedSec = this.sceneTimeMs / 1000;
+
+    // Wave 13 — endless watchtowers: each cycle (1.3 s) fire at the nearest
+    // live wolf within 260 px.
+    for (const tw of this.endlessTowers) {
+      tw.cycleMs = Math.max(0, tw.cycleMs - delta);
+      if (tw.cycleMs > 0) continue;
+      let best: Wolf | null = null; let bestD2 = 260 * 260;
+      for (const w of this.wolves) {
+        if (w.state === 'dead') continue;
+        const d2 = (w.lx - tw.sprite.x) ** 2 + (w.ly - tw.sprite.y) ** 2;
+        if (d2 < bestD2) { bestD2 = d2; best = w; }
+      }
+      if (!best) { tw.cycleMs = 400; continue; }
+      const target = best;
+      const arrow = this.add.image(tw.sprite.x, tw.sprite.y - 40, 'projectile_arrow_01')
+        .setDepth(2000).setDisplaySize(28, 8);
+      this.tweens.add({
+        targets: arrow, x: target.lx, y: target.ly - 20,
+        duration: 320, ease: 'Linear',
+        onComplete: () => {
+          arrow.destroy();
+          if (target.state === 'dead') return;
+          target.hp -= 1; target.hitFlashMs = 180;
+          if (target.hp <= 0) this.killWolf(target);
+        },
+      });
+      tw.cycleMs = 1300;
+    }
 
     // Wave timer — counts down to next wave trigger
     this.waveTimer -= delta;

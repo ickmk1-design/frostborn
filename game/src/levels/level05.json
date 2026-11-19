@@ -16,13 +16,13 @@
   },
   "fire": {
     "iso": [8, 7],
-    "fuelMax": 100,
+    "fuelMax": 140,
     "fuelDrainPerSec": 5,
     "fuelPerLog": 20,
     "coinsPerLog": 5,
     "freezeRatePerSec": 4,
     "freezeMax": 100,
-    "initialFuel": 100,
+    "initialFuel": 140,
     "fuelDrainWarmupSec": 120,
     "fuelDrainWarmupMul": 0.20
   },

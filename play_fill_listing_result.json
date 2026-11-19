@@ -1,0 +1,171 @@
+{
+  "editId": "04501673697931881503",
+  "operations": [
+    {
+      "op": "listings.update en-US",
+      "status": 200,
+      "ok": true,
+      "bodySha": "5d579162c308f9a0c9e493bfe612a1d3a34faf238a215e47adbce95c1faaf9e0",
+      "body": {
+        "language": "en-US",
+        "title": "Frostborn: Winter Survival"
+      }
+    },
+    {
+      "op": "listings.update tr-TR",
+      "status": 200,
+      "ok": true,
+      "bodySha": "775ae6776c8e88c73f5e21fcc6a2756a5db78eb45b9e55ccf7630699e35f1bb3",
+      "body": {
+        "language": "tr-TR",
+        "title": "Frostborn: Kış Hayatta Kalma"
+      }
+    },
+    {
+      "op": "images.deleteall icon en-US",
+      "status": 400,
+      "ok": false,
+      "bodySha": "44c75994241db2d402c53156730641e243d970eba9a91637244d2991c54fc01e",
+      "body": {
+        "error": {
+          "code": 400,
+          "message": "Invalid value at 'image_type' (type.googleapis.com/google.play.publishingapi.v3.AppImageType), \"images\"",
+          "status": "INVALID_ARGUMENT",
+          "details": [
+            {
+              "@type": "type.googleapis.com/google.rpc.BadRequest",
+              "fieldViolations": [
+                {
+                  "field": "image_type",
+                  "description": "Invalid value at 'image_type' (type.googleapis.com/google.play.publishingapi.v3.AppImageType), \"images\""
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "op": "images.upload icon en-US",
+      "status": 404,
+      "ok": false,
+      "bodySha": "23a67ca240c535d85f8ecd80ebe0972225fcb8f9016f5971ed9997d2213bcbb4",
+      "body": {
+        "_raw": "Could not find handler for this request."
+      }
+    },
+    {
+      "op": "images.deleteall featureGraphic en-US",
+      "status": 400,
+      "ok": false,
+      "bodySha": "44c75994241db2d402c53156730641e243d970eba9a91637244d2991c54fc01e",
+      "body": {
+        "error": {
+          "code": 400,
+          "message": "Invalid value at 'image_type' (type.googleapis.com/google.play.publishingapi.v3.AppImageType), \"images\"",
+          "status": "INVALID_ARGUMENT",
+          "details": [
+            {
+              "@type": "type.googleapis.com/google.rpc.BadRequest",
+              "fieldViolations": [
+                {
+                  "field": "image_type",
+                  "description": "Invalid value at 'image_type' (type.googleapis.com/google.play.publishingapi.v3.AppImageType), \"images\""
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "op": "images.upload featureGraphic en-US",
+      "status": 404,
+      "ok": false,
+      "bodySha": "23a67ca240c535d85f8ecd80ebe0972225fcb8f9016f5971ed9997d2213bcbb4",
+      "body": {
+        "_raw": "Could not find handler for this request."
+      }
+    },
+    {
+      "op": "images.deleteall icon tr-TR",
+      "status": 400,
+      "ok": false,
+      "bodySha": "44c75994241db2d402c53156730641e243d970eba9a91637244d2991c54fc01e",
+      "body": {
+        "error": {
+          "code": 400,
+          "message": "Invalid value at 'image_type' (type.googleapis.com/google.play.publishingapi.v3.AppImageType), \"images\"",
+          "status": "INVALID_ARGUMENT",
+          "details": [
+            {
+              "@type": "type.googleapis.com/google.rpc.BadRequest",
+              "fieldViolations": [
+                {
+                  "field": "image_type",
+                  "description": "Invalid value at 'image_type' (type.googleapis.com/google.play.publishingapi.v3.AppImageType), \"images\""
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "op": "images.upload icon tr-TR",
+      "status": 404,
+      "ok": false,
+      "bodySha": "23a67ca240c535d85f8ecd80ebe0972225fcb8f9016f5971ed9997d2213bcbb4",
+      "body": {
+        "_raw": "Could not find handler for this request."
+      }
+    },
+    {
+      "op": "images.deleteall featureGraphic tr-TR",
+      "status": 400,
+      "ok": false,
+      "bodySha": "44c75994241db2d402c53156730641e243d970eba9a91637244d2991c54fc01e",
+      "body": {
+        "error": {
+          "code": 400,
+          "message": "Invalid value at 'image_type' (type.googleapis.com/google.play.publishingapi.v3.AppImageType), \"images\"",
+          "status": "INVALID_ARGUMENT",
+          "details": [
+            {
+              "@type": "type.googleapis.com/google.rpc.BadRequest",
+              "fieldViolations": [
+                {
+                  "field": "image_type",
+                  "description": "Invalid value at 'image_type' (type.googleapis.com/google.play.publishingapi.v3.AppImageType), \"images\""
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "op": "images.upload featureGraphic tr-TR",
+      "status": 404,
+      "ok": false,
+      "bodySha": "23a67ca240c535d85f8ecd80ebe0972225fcb8f9016f5971ed9997d2213bcbb4",
+      "body": {
+        "_raw": "Could not find handler for this request."
+      }
+    },
+    {
+      "op": "details.update",
+      "status": 200,
+      "ok": true,
+      "bodySha": "e73d46c47ae4e13d5f80a23d3f245e75ed2b543be9497c08a4733e48cc176ff1",
+      "body": {}
+    }
+  ],
+  "commit": {
+    "status": 200,
+    "body": {
+      "id": "04501673697931881503",
+      "expiryTimeSeconds": "1794906629"
+    }
+  }
+}

@@ -1,6 +1,18 @@
 import { Capacitor } from '@capacitor/core';
 import { Purchases, LOG_LEVEL, PurchasesPackage } from '@revenuecat/purchases-capacitor';
-import { grantIap } from './economy';
+import { grantIap, addCoins } from './economy';
+
+// Consumable coin products — grant the matching coin amount on success.
+// Keep in sync with store listing (coins_small = 250, etc).
+const COIN_GRANTS: Record<string, number> = {
+  coins_small:  250,
+  coins_medium: 900,
+  coins_large:  2500,
+};
+function grantCoinsForProduct(productId: string): number {
+  const key = Object.keys(COIN_GRANTS).find(k => productId.includes(k));
+  return key ? COIN_GRANTS[key] : 0;
+}
 
 const RC_KEYS = {
   ios:     'appl_LjAcpUJAArUKyuDOFUPxrqZYkSg',
@@ -52,6 +64,9 @@ export async function purchasePackage(pkg: PurchasesPackage): Promise<boolean> {
     const active = customerInfo.entitlements.active;
     if (active['no_ads'])       await grantIap('remove_ads');
     if (active['starter_pack']) await grantIap('starter_pack');
+    // Consumable coin packs — grant coins based on the product identifier.
+    const coins = grantCoinsForProduct(pkg.product.identifier);
+    if (coins > 0) await addCoins(coins);
     return true;
   } catch (e: any) {
     if (e?.userCancelled) return false;

@@ -62,6 +62,9 @@ export interface StationInstance {
   priorityBump: number;             // user-adjustable; lower = higher priority
   outputCount: number;              // resource units sitting at the station waiting to be hauled
   inputCount: number;               // resource units in local hopper (for consumer stations)
+  // Multi-input stations (supply_sled) track per-resource counters here instead
+  // of the single inputCount above. Key = ResourceId string.
+  inputsByResource?: Record<string, number>;
 }
 
 export const DEFAULT_CYCLE_MS: Record<StationKind, number> = {
@@ -85,7 +88,14 @@ export function pickStationForWorker(
   workerLx: number,
   workerLy: number,
 ): StationInstance | null {
-  const unmanned = stations.filter(s => s.workerId < 0 && s.cfg.kind !== 'fire');
+  // Fire + supply_sled + watchtower are "passive" — fire feeds itself via
+  // player, sled auto-processes inputs, and watchtower fires arrows without
+  // needing a manning survivor.
+  const unmanned = stations.filter(s =>
+    s.workerId < 0
+    && s.cfg.kind !== 'fire'
+    && s.cfg.kind !== 'supply_sled'
+    && s.cfg.kind !== 'watchtower');
   if (unmanned.length === 0) return null;
 
   // Sort by (priority asc, distance asc). Workers go to the highest-priority

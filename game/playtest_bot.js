@@ -16,7 +16,7 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-const BASE_URL       = 'http://localhost:5177';
+const BASE_URL       = process.env.BOT_URL || 'http://localhost:8911';
 const VIEWPORT       = { width: 393, height: 852 };
 // Per-level bot timeout = balance target max + 2 min (bot-only cap; real players have no timer).
 function levelTimeout(n) {
@@ -52,6 +52,183 @@ function isoToScreen(ix, iy, ox, oy) {
 }
 function dist(ax, ay, bx, by) { return Math.hypot(bx - ax, by - ay); }
 function angle(fx, fy, tx, ty) { return Math.atan2(ty - fy, tx - fx); }
+
+// ── Mini nav-grid — built from level cfg + static colliders. Same shape as
+// the in-game NavGrid in src/systems/navgrid.ts so the bot plans with the
+// same topology (walls + gate) that the game uses.
+class BotNavGrid {
+  constructor() { this.cell = 24; }
+  build(cfg) {
+    const ox = cfg.originX ?? 195; const oy = cfg.originY ?? 152;
+    this.ox = ox; this.oy = oy;
+    const obs = [];
+    const fp = isoToScreen(cfg.fire.iso[0], cfg.fire.iso[1], ox, oy);
+    obs.push({ x: fp.x, y: fp.y, r: 62 });
+    for (const t of (cfg.trees ?? [])) {
+      const p = isoToScreen(t.iso[0], t.iso[1], ox, oy);
+      obs.push({ x: p.x, y: p.y, r: 12 });
+    }
+    for (const s of (cfg.stations ?? [])) {
+      const p = isoToScreen(s.iso[0], s.iso[1], ox, oy);
+      obs.push({ x: p.x, y: p.y, r: 14 });
+    }
+    const allIso = [
+      ...(cfg.walls ?? []),
+      ...(cfg.trees ?? []).map(t => t.iso),
+      ...(cfg.frozenSurvivors ?? []).map(s => s.iso),
+      cfg.fire.iso,
+      ...(cfg.buildPads ?? []).map(p => p.iso),
+      ...(cfg.stations ?? []).map(s => s.iso),
+      ...(cfg.decor ?? []).map(d => d.iso),
+    ];
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const [ix, iy] of allIso) {
+      const p = isoToScreen(ix, iy, ox, oy);
+      if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
+    }
+    const PAD = 200;
+    this.minX = minX - PAD; this.minY = minY - PAD;
+    this.maxX = maxX + PAD; this.maxY = maxY + PAD;
+    this.cols = Math.max(1, Math.ceil((this.maxX - this.minX) / this.cell));
+    this.rows = Math.max(1, Math.ceil((this.maxY - this.minY) / this.cell));
+    this.b = new Uint8Array(this.cols * this.rows);
+    for (const o of obs) {
+      const c0c = Math.floor((o.x - o.r - this.minX) / this.cell);
+      const c0r = Math.floor((o.y - o.r - this.minY) / this.cell);
+      const c1c = Math.floor((o.x + o.r - this.minX) / this.cell);
+      const c1r = Math.floor((o.y + o.r - this.minY) / this.cell);
+      const r2 = o.r * o.r;
+      for (let r = c0r; r <= c1r; r++) {
+        if (r < 0 || r >= this.rows) continue;
+        for (let c = c0c; c <= c1c; c++) {
+          if (c < 0 || c >= this.cols) continue;
+          const cx = this.minX + (c + 0.5) * this.cell;
+          const cy = this.minY + (r + 0.5) * this.cell;
+          if ((cx - o.x) ** 2 + (cy - o.y) ** 2 <= r2) this.b[r * this.cols + c] = 1;
+        }
+      }
+    }
+    const gateSet = new Set();
+    for (const [gx, gy] of (cfg.gate ?? [])) gateSet.add(`${gx},${gy}`);
+    for (const [wx, wy] of (cfg.walls ?? [])) {
+      if (gateSet.has(`${wx},${wy}`)) continue;
+      const p = isoToScreen(wx, wy, ox, oy);
+      const x0 = p.x - TW / 2 + 4; const y0 = p.y - TH / 2 + 2;
+      const x1 = p.x + TW / 2 - 4; const y1 = p.y + TH / 2 - 2;
+      const c0c = Math.floor((x0 - this.minX) / this.cell);
+      const c0r = Math.floor((y0 - this.minY) / this.cell);
+      const c1c = Math.floor((x1 - this.minX) / this.cell);
+      const c1r = Math.floor((y1 - this.minY) / this.cell);
+      for (let r = c0r; r <= c1r; r++) {
+        if (r < 0 || r >= this.rows) continue;
+        for (let c = c0c; c <= c1c; c++) {
+          if (c < 0 || c >= this.cols) continue;
+          this.b[r * this.cols + c] = 1;
+        }
+      }
+    }
+    for (const [gx, gy] of (cfg.gate ?? [])) {
+      const p = isoToScreen(gx, gy, ox, oy);
+      const cc = Math.floor((p.x - this.minX) / this.cell);
+      const rr = Math.floor((p.y - this.minY) / this.cell);
+      for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+        const r = rr + dr; const c = cc + dc;
+        if (r < 0 || r >= this.rows || c < 0 || c >= this.cols) continue;
+        this.b[r * this.cols + c] = 0;
+      }
+    }
+  }
+  _blocked(x, y) {
+    const c = Math.floor((x - this.minX) / this.cell);
+    const r = Math.floor((y - this.minY) / this.cell);
+    if (r < 0 || r >= this.rows || c < 0 || c >= this.cols) return false;
+    return this.b[r * this.cols + c] === 1;
+  }
+  _nearest(x, y, maxRings = 10) {
+    const c0 = Math.floor((x - this.minX) / this.cell);
+    const r0 = Math.floor((y - this.minY) / this.cell);
+    for (let ring = 0; ring <= maxRings; ring++) {
+      for (let dr = -ring; dr <= ring; dr++) {
+        for (let dc = -ring; dc <= ring; dc++) {
+          if (ring > 0 && Math.max(Math.abs(dr), Math.abs(dc)) !== ring) continue;
+          const r = r0 + dr; const c = c0 + dc;
+          if (r < 0 || r >= this.rows || c < 0 || c >= this.cols) continue;
+          if (!this.b[r * this.cols + c]) return { r, c };
+        }
+      }
+    }
+    return null;
+  }
+  _los(x0, y0, x1, y1) {
+    const d = Math.hypot(x1 - x0, y1 - y0);
+    const steps = Math.max(2, Math.ceil(d / (this.cell * 0.6)));
+    for (let s = 1; s <= steps; s++) {
+      const t = s / steps;
+      if (this._blocked(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t)) return false;
+    }
+    return true;
+  }
+  // Returns an array of waypoints (screen coords), or [] if no path.
+  findPath(fromX, fromY, toX, toY) {
+    const s = this._nearest(fromX, fromY); const g = this._nearest(toX, toY);
+    if (!s || !g) return [];
+    if (this._los(fromX, fromY, toX, toY)) return [{ x: toX, y: toY }];
+    if (s.r === g.r && s.c === g.c) return [{ x: toX, y: toY }];
+    const sIdx = s.r * this.cols + s.c; const gIdx = g.r * this.cols + g.c;
+    const gScore = new Map(); const fScore = new Map(); const came = new Map();
+    gScore.set(sIdx, 0);
+    const h = (r, c) => { const dr = Math.abs(r - g.r); const dc = Math.abs(c - g.c); return (dr + dc) + (1.414 - 2) * Math.min(dr, dc); };
+    fScore.set(sIdx, h(s.r, s.c));
+    // Priority queue via simple binary heap
+    const heap = [sIdx];
+    const cmp = (a, b) => (fScore.get(a) ?? Infinity) - (fScore.get(b) ?? Infinity);
+    const push = v => { heap.push(v); let i = heap.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (cmp(heap[i], heap[p]) < 0) { const t = heap[i]; heap[i] = heap[p]; heap[p] = t; i = p; } else break; } };
+    const pop = () => { if (heap.length === 0) return undefined; const top = heap[0]; const last = heap.pop(); if (heap.length > 0) { heap[0] = last; let i = 0; const n = heap.length; while (true) { const l = 2 * i + 1; const r = 2 * i + 2; let m = i; if (l < n && cmp(heap[l], heap[m]) < 0) m = l; if (r < n && cmp(heap[r], heap[m]) < 0) m = r; if (m === i) break; const t = heap[i]; heap[i] = heap[m]; heap[m] = t; i = m; } } return top; };
+    const DIRS = [[-1,-1,1.414],[-1,0,1],[-1,1,1.414],[0,-1,1],[0,1,1],[1,-1,1.414],[1,0,1],[1,1,1.414]];
+    let iters = 0;
+    while (heap.length > 0 && iters < 8000) {
+      iters++;
+      const cur = pop();
+      if (cur === gIdx) {
+        const cells = [cur]; let n = cur;
+        while ((n = came.get(n)) !== undefined) cells.unshift(n);
+        const way = [];
+        for (let i = 1; i < cells.length; i++) {
+          const rr = Math.floor(cells[i] / this.cols); const cc = cells[i] % this.cols;
+          way.push({ x: this.minX + (cc + 0.5) * this.cell, y: this.minY + (rr + 0.5) * this.cell });
+        }
+        if (way.length > 0) way[way.length - 1] = { x: toX, y: toY };
+        // Smooth via line-of-sight
+        const out = []; let cx = fromX, cy = fromY; let i = 0;
+        while (i < way.length) {
+          let j = way.length - 1;
+          while (j > i && !this._los(cx, cy, way[j].x, way[j].y)) j--;
+          out.push(way[j]); cx = way[j].x; cy = way[j].y; i = j + 1;
+        }
+        return out;
+      }
+      const cr = Math.floor(cur / this.cols); const cc = cur % this.cols;
+      for (const [dr, dc, w] of DIRS) {
+        const nr = cr + dr; const nc = cc + dc;
+        if (nr < 0 || nr >= this.rows || nc < 0 || nc >= this.cols) continue;
+        if (this.b[nr * this.cols + nc]) continue;
+        if (dr !== 0 && dc !== 0) {
+          if (this.b[cr * this.cols + nc] || this.b[nr * this.cols + cc]) continue;
+        }
+        const nIdx = nr * this.cols + nc;
+        const tentative = (gScore.get(cur) ?? Infinity) + w;
+        if (tentative < (gScore.get(nIdx) ?? Infinity)) {
+          came.set(nIdx, cur);
+          gScore.set(nIdx, tentative);
+          fScore.set(nIdx, tentative + h(nr, nc));
+          push(nIdx);
+        }
+      }
+    }
+    return [];
+  }
+}
 
 // Output dirs
 const SCREENSHOTS_DIR = path.join(__dirname, 'playtest_screenshots');
@@ -185,6 +362,13 @@ class Bot {
     this.navPrevMs     = Date.now();
     this.navStuckMs    = 0;         // accumulated ms without movement toward target
 
+    // Nav-grid for hero pathfinding (same topology as game NavGrid).
+    this.navGrid = new BotNavGrid();
+    this.navGrid.build(cfg);
+    this._path = null;
+    this._pathIdx = 0;
+    this._pathTgtX = NaN; this._pathTgtY = NaN;
+
     // Stall detection
     this.lastMoveX     = -9999;
     this.lastMoveY     = -9999;
@@ -227,24 +411,49 @@ class Bot {
     }
   }
 
-  // ── Smart navigation: walk toward target, detour if stuck ──────────────────
-  // Tracks movement progress; if no progress in 3s, tries a perpendicular detour.
+  // ── Smart navigation: path-plan with nav-grid, walk toward the next
+  // waypoint. If no progress in 2.5s, repath; if still stuck, perpendicular
+  // detour as a last resort.
   async navigateTo(state, tx, ty, stepMs = 1200) {
     const px = state.playerLX, py = state.playerLY;
     const d = dist(px, py, tx, ty);
     if (d < 50) return; // already close enough
 
-    // Check if we're making progress toward target
+    // Rebuild the path if the target changed or the path ran out.
+    const pathStale = !this._path || this._pathIdx >= this._path.length
+      || Math.hypot(tx - this._pathTgtX, ty - this._pathTgtY) > 24;
+    if (pathStale) {
+      this._path = this.navGrid.findPath(px, py, tx, ty);
+      this._pathIdx = 0;
+      this._pathTgtX = tx; this._pathTgtY = ty;
+    }
+    // Advance waypoints already reached.
+    while (this._path && this._pathIdx < this._path.length) {
+      const wp = this._path[this._pathIdx];
+      if (Math.hypot(wp.x - px, wp.y - py) < 32) this._pathIdx++; else break;
+    }
+    const wp = (this._path && this._pathIdx < this._path.length)
+      ? this._path[this._pathIdx] : { x: tx, y: ty };
+
+    // Progress check — distance to the FINAL target, not the current waypoint
+    // (waypoints change as the hero advances, which would false-trigger stalls).
     const prevDist = dist(this.navPrevX, this.navPrevY, tx, ty);
     const currDist = dist(px, py, tx, ty);
     const progressPx = prevDist - currDist;
 
     if (this.navPrevX !== -9999 && Date.now() - this.navPrevMs > 2500 && progressPx < 10) {
-      // Stuck — try perpendicular detour
-      const mainAngle = angle(px, py, tx, ty);
-      const perpAngle = mainAngle + (Math.random() > 0.5 ? Math.PI / 2 : -Math.PI / 2);
-      const perpDeg = snapAngle(perpAngle);
-      await drag(this.page, perpDeg, 900);
+      // First stall → force repath. If that repath also failed to find a
+      // route, fall back to a perpendicular detour.
+      const freshPath = this.navGrid.findPath(px, py, tx, ty);
+      if (freshPath.length === 0 || (this._path && JSON.stringify(freshPath) === JSON.stringify(this._path))) {
+        const mainAngle = angle(px, py, tx, ty);
+        const perpAngle = mainAngle + (Math.random() > 0.5 ? Math.PI / 2 : -Math.PI / 2);
+        const perpDeg = snapAngle(perpAngle);
+        await drag(this.page, perpDeg, 900);
+      } else {
+        this._path = freshPath; this._pathIdx = 0;
+        this._pathTgtX = tx; this._pathTgtY = ty;
+      }
       this.navPrevMs = Date.now();
       this.navPrevX = px; this.navPrevY = py;
       return;
@@ -253,9 +462,10 @@ class Bot {
     this.navPrevX = px; this.navPrevY = py;
     this.navPrevMs = Date.now();
 
-    const a = angle(px, py, tx, ty);
+    const a = angle(px, py, wp.x, wp.y);
     const deg = snapAngle(a);
-    await drag(this.page, deg, Math.min(stepMs, d * 8));
+    const legD = dist(px, py, wp.x, wp.y);
+    await drag(this.page, deg, Math.min(stepMs, legD * 8));
   }
 
   // ── Core fire loop ─────────────────────────────────────────────────────────
@@ -297,6 +507,8 @@ class Bot {
       case 'collectLogs':     await this.doCollectLogs(stage, state); break;
       case 'fishCaught':
       case 'cookedServed':
+      case 'planksProduced':
+      case 'planksStocked':
         await this.doTendAndDefend(stage, state);
         break;
       default:
@@ -753,7 +965,14 @@ async function main() {
   }
   console.log('Server is up at', BASE_URL);
 
-  const browser = await webkit.launch({ headless: true });
+  // Playwright/WebKit resources accumulate across contexts during long multi-level
+  // runs. The scene-transition leak probe confirmed Phaser teardown is clean
+  // (textures/tweens/timers/heap all flat L1→L8) and FPS stays 21-25, so the
+  // cumulative slow-down is in the browser process itself. Mitigation: relaunch
+  // the WebKit browser every CONTEXT_RESTART_EVERY levels so each batch starts
+  // fresh. 3 picked per operator guidance.
+  const CONTEXT_RESTART_EVERY = 1;
+  let browser = await webkit.launch({ headless: true });
   const results  = [];
 
   // Optional LEVELS env var — comma-separated list (e.g. "6" or "12,13,14,15").
@@ -763,9 +982,18 @@ async function main() {
     ? levelsEnv.split(',').map(s => parseInt(s.trim(), 10)).filter(n => n >= 1 && n <= 15)
     : Array.from({ length: 15 }, (_, i) => i + 1);
 
+  let levelsSinceRestart = 0;
   for (const n of levelNums) {
     console.log(`\n=== Level ${n} ===`);
     const cfg = cfgs[n - 1];
+
+    if (levelsSinceRestart >= CONTEXT_RESTART_EVERY) {
+      try { await browser.close(); } catch {}
+      browser = await webkit.launch({ headless: true });
+      levelsSinceRestart = 0;
+      console.log(`  [bot] relaunched browser (every ${CONTEXT_RESTART_EVERY} levels)`);
+    }
+    levelsSinceRestart++;
 
     const ctx = await browser.newContext({
       viewport:  VIEWPORT,
@@ -783,6 +1011,8 @@ async function main() {
         console.log(`  [err] ${m.text().substring(0,120)}`);
       } else if (m.type() === 'log' && m.text().startsWith('[FPS-spike]')) {
         fpsSpikes.push({ t: Date.now(), text: m.text() });
+      } else if (m.type() === 'log' && (m.text().startsWith('[tel]') || m.text().startsWith('[chain]') || m.text().startsWith('[stations]') || m.text().startsWith('[stage]'))) {
+        console.log(`  ${m.text()}`);
       }
     });
     page.on('pageerror', e => {

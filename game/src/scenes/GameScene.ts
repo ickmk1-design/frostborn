@@ -32,6 +32,7 @@ import {
   type StationConfig, type StationInstance, type StationKind,
 } from '../systems/stations';
 import { STATION_PRODUCES, STATION_CONSUMES, type ResourceId } from '../systems/resources';
+import { NavGrid, type Waypoint } from '../systems/navgrid';
 
 type WorkerState = 'idle' | 'toTree' | 'chopping' | 'toFire' | 'fleeing'
   | 'toStation' | 'atStation' | 'haul';
@@ -55,6 +56,20 @@ interface Survivor {
   workerHaulDest?: { kind: 'fire' } | { kind: 'station'; station: StationInstance } | null;
   carrySprites?: Phaser.GameObjects.Image[];  // stacked item sprites held in front of body while hauling
   fleeMs?: number;                 // ms remaining of forced huddle-at-fire while fleeing
+  // NavGrid path following
+  path?: Waypoint[];
+  pathIdx?: number;
+  pathTargetX?: number;
+  pathTargetY?: number;
+  pathAttempts?: number;
+  repathCooldownMs?: number;
+  // Telemetry
+  telRepaths?: number;
+  telStuckEvents?: number;
+  telTimeIdleMs?: number;
+  telTimeWalkingMs?: number;
+  telTimeWorkingMs?: number;
+  telTimeFleeingMs?: number;
   bobOffset: number;
   lx: number; ly: number;
   waddlePhase: number;
@@ -100,6 +115,15 @@ interface AnimalEntity {
   // Wave 4 — "Wolves at the Lake": wolves can target workers at stations as
   // well as the player. -1 = player, >=0 = index into this.survivors.
   huntTargetIdx: number;
+  // Shared pathfinding fields (nav-grid)
+  path?: Waypoint[];
+  pathIdx?: number;
+  pathTargetX?: number;
+  pathTargetY?: number;
+  pathAttempts?: number;
+  stuckMs: number;
+  stuckCheckX: number;
+  stuckCheckY: number;
   spec: {
     hp: number; speed: number; aggroSpeed: number;
     aggroRange: number; circleDistancePx: number;
@@ -118,6 +142,20 @@ interface MeatDrop {
   lx: number; ly: number;
   bobPhase: number;
 }
+
+// Generic duck type for anything that follows a nav-grid path (Survivor,
+// AnimalEntity, dev/test utilities). Keeps the helpers interface-agnostic.
+type PathState = {
+  lx: number; ly: number;
+  path?: Waypoint[];
+  pathIdx?: number;
+  pathTargetX?: number;
+  pathTargetY?: number;
+  pathAttempts?: number;
+  stuckMs: number;
+  stuckCheckX: number;
+  stuckCheckY: number;
+};
 
 const CHAR_SIZE = 76;         // displaySize for all character sprites
 const BOB_AMP   = 1.5;        // px, subtle bob while moving
@@ -160,6 +198,8 @@ export default class GameScene extends Phaser.Scene {
 
   private coins = 0; private fuel = 0;
   private freezeMeter = 0; private rescuedCount = 0;
+  private blizzardMs = 0;  // ms remaining in blizzard event (Wave 12)
+  private blizzardTriggered = false;
   private tentBuilt = false; private gameOver = false;
   private coinsPaidForTent = 0; private carriedLogs = 0;
   private sceneTimeMs = 0;
@@ -202,6 +242,7 @@ export default class GameScene extends Phaser.Scene {
 
   private depthGroup: Array<Phaser.GameObjects.Image | Phaser.GameObjects.Sprite> = [];
   private obstacles: Array<{ x: number; y: number; r: number }> = [];
+  private navGrid = new NavGrid();
 
   private animals: AnimalEntity[] = [];
   private meatDrops: MeatDrop[] = [];
@@ -231,6 +272,9 @@ export default class GameScene extends Phaser.Scene {
   private animalsKilled = 0;
   private fishCaught = 0;
   private cookedServed = 0;
+  private planksProduced = 0;
+  private planksAvailable = 0;
+  private supplyRunsCompleted = 0;
   private goalStages: Array<{type:string; target:number|string; hintText:string; hintTextTr?:string; completedText?:string; completedTextTr?:string}> = [];
   private currentStageIdx = 0;
   private stageBannerMs = 0;
@@ -554,7 +598,7 @@ export default class GameScene extends Phaser.Scene {
       }
       ws.setDepth(wallDepth);
     }
-    for (const [gx, gy] of cfg.gate) {
+    for (const [gx, gy] of (cfg.gate ?? [])) {
       const pos = isoToScreen(gx, gy, ox, oy);
       const pg = this.add.graphics().setDepth(pos.y);
       pg.fillStyle(0x6b3a1f, 1).fillRect(pos.x - 4, pos.y - 32, 8, 32);
@@ -597,6 +641,17 @@ export default class GameScene extends Phaser.Scene {
           .setDisplaySize(sz, sz).setOrigin(0.5, 0.85);
         this.depthGroup.push(ds);
         this.decorSprites.push(ds);
+        // Wave 8 — conveyor belts tween a small "roller" dot east-to-west over
+        // the strip so the player can see the belt moving. Cheap: per-strip one
+        // sprite + one yoyo tween.
+        if (d.key === 'tile_conveyor_belt_01') {
+          const r = this.add.image(dp.x, dp.y - 10, 'resource_meat_chunk_01')
+            .setDisplaySize(16, 16).setDepth(dp.y + 1).setAlpha(0.85);
+          this.tweens.add({
+            targets: r, x: { from: dp.x - 26, to: dp.x + 26 },
+            duration: 1500, repeat: -1, ease: 'Linear',
+          });
+        }
       }
     }
 
@@ -869,10 +924,10 @@ export default class GameScene extends Phaser.Scene {
         const isBoss = charType !== 'wolf';
         const hasAtlas = this.textures.exists(atlasKey);
         const displayScale = spec.displayScale ?? 1;
-        const baseSize = atlasKey === 'deer' ? 136 : WOLF_TYPES.has(charType) ? 144 : 80;
+        const baseSize = atlasKey === 'deer' ? 136 : atlasKey === 'stag' ? 148 : WOLF_TYPES.has(charType) ? 144 : 80;
         const displaySize = Math.round(baseSize * displayScale);
         const sp = hasAtlas
-          ? this.add.sprite(pos.x, pos.y, atlasKey, `${atlasKey}_walk_d0_f0`).setDisplaySize(displaySize, displaySize).setOrigin(0.5, 1.0)
+          ? this.add.sprite(pos.x, pos.y, atlasKey, `${atlasKey}_walk_d0_f0`).setDisplaySize(displaySize, displaySize).setOrigin(0.5, atlasKey === 'stag' ? 0.92 : 1.0)
           : this.add.sprite(pos.x, pos.y, 'enemy_grey_wolf_01').setDisplaySize(displaySize > 80 ? displaySize : 70, displaySize > 80 ? displaySize : 70).setOrigin(0.5, 1.0);
         this.depthGroup.push(sp);
         const baseTint = spec.furTint ?? 0xffffff;
@@ -880,7 +935,7 @@ export default class GameScene extends Phaser.Scene {
         let eyeGlow: Phaser.GameObjects.Image | undefined;
         // Eye glow removed — per-frame head tracking not feasible without frame-level bone data
         // Per-animal shadow (dynamic — moves + scales with animal)
-        const shadowBaseForScale = atlasKey === 'deer' ? 136 : 144;
+        const shadowBaseForScale = atlasKey === 'deer' ? 136 : atlasKey === 'stag' ? 148 : 144;
         const shScale = displaySize / shadowBaseForScale;
         const animalShadow = this.add.image(pos.x, pos.y, 'entity_shadow')
           .setDisplaySize(54 * shScale, 20 * shScale).setDepth(2);
@@ -895,6 +950,7 @@ export default class GameScene extends Phaser.Scene {
           spawnLx: pos.x, spawnLy: pos.y, biteMs: 0, fleeMs: 0,
           circleAngle: Math.random() * Math.PI * 2, circleDir: Math.random() > 0.5 ? 1 : -1, stateTimer: 0, lungeTargetX: 0, lungeTargetY: 0, huntTargetIdx: -1,
           spec,
+          stuckMs: 0, stuckCheckX: pos.x, stuckCheckY: pos.y,
         };
         this.pickRoamTarget(animal);
         this.animals.push(animal);
@@ -916,11 +972,16 @@ export default class GameScene extends Phaser.Scene {
         sprite = this.add.image(sp.x, sp.y, spriteKey)
           .setDisplaySize(96, 96).setOrigin(0.5, 0.85);
         this.depthGroup.push(sprite);
-        // Tap-to-bump priority: lower priorityBump by 1 (max bump: -2).
+        // Tap-to-bump priority: cycles 0 → -1 → -2 → 0 so the player can
+        // toggle a station off without reloading. Visual tint (in update())
+        // confirms the state.
         sprite.setInteractive({ useHandCursor: true });
         const bump = () => {
           const inst = this.stations.find(st => st.sprite === sprite);
-          if (inst) inst.priorityBump = Math.max(-2, inst.priorityBump - 1);
+          if (!inst) return;
+          inst.priorityBump = inst.priorityBump > -2 ? inst.priorityBump - 1 : 0;
+          // Visual nudge so the tap feels responsive.
+          this.tweens.add({ targets: sprite, scaleX: { from: (sprite as Phaser.GameObjects.Image).scaleX * 1.12, to: (sprite as Phaser.GameObjects.Image).scaleX }, scaleY: { from: (sprite as Phaser.GameObjects.Image).scaleY * 1.12, to: (sprite as Phaser.GameObjects.Image).scaleY }, duration: 180, ease: 'Back.Out' });
         };
         sprite.on('pointerup', bump);
       }
@@ -959,6 +1020,8 @@ export default class GameScene extends Phaser.Scene {
         ...cfg.frozenSurvivors.map((s: any) => s.iso as [number, number]),
         cfg.fire.iso as [number, number],
         ...cfg.buildPads.map((p: any) => p.iso as [number, number]),
+        ...((cfg as any).stations ?? []).map((s: any) => s.iso as [number, number]),
+        ...((cfg as any).animals ?? []).map((a: any) => a.iso as [number, number]),
         ...((cfg as any).decor as Array<{ iso: [number, number] }>).map(d => d.iso),
       ];
       let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
@@ -975,6 +1038,13 @@ export default class GameScene extends Phaser.Scene {
         (maxX - minX) + PAD * 2,
         (maxY - minY) + PAD * 2,
       );
+      // ── NavGrid — snap to a tight world rect (stations/survivors/fire)
+      // plus a 200px margin on each side, so A* search space stays small.
+      const NAV_PAD = 200;
+      this.navGrid.build(cfg, this.obstacles, {
+        minX: minX - NAV_PAD, minY: minY - NAV_PAD,
+        maxX: maxX + NAV_PAD, maxY: maxY + NAV_PAD,
+      });
     }
     this.cameras.main.startFollow(this.playerSprite, true, 0.08, 0.08);
 
@@ -1029,6 +1099,11 @@ export default class GameScene extends Phaser.Scene {
     this.carriedMeat = 0; this.cookQueue = 0; this.cookTimer = 0;
     this.playerAttackMs = 0; this.animalsKilled = 0; this.currentStageIdx = 0;
     this.fishCaught = 0; this.cookedServed = 0;
+    // Wave 5+ counters — missing resets caused stages to auto-complete
+    // when a prior level's counters bled through on scene restart.
+    this.planksProduced = 0; this.planksAvailable = 0;
+    this.supplyRunsCompleted = 0;
+    this.blizzardMs = 0; this.blizzardTriggered = false;
     this.playerHp = cfg.player.maxHp ?? 10;
     this.playerHpMax = cfg.player.maxHp ?? 10;
     this.playerDead = false; this.playerDeadMs = 0; this.playerFlashMs = 0;
@@ -1169,9 +1244,11 @@ export default class GameScene extends Phaser.Scene {
 
   private updatePadSign(): void {
     const pad = cfg.buildPads[0];
-    const remaining = Math.max(0, pad.costCoins - Math.floor(this.coinsPaidForTent));
+    const remainingC = Math.max(0, pad.costCoins - Math.floor(this.coinsPaidForTent));
     const pct = Math.min(1, this.coinsPaidForTent / pad.costCoins);
-    this.padLabel.setText(`${t('buildTentSign')}  ${remaining}`);
+    const plankReq = pad.costPlanks ?? 0;
+    const plankLabel = plankReq > 0 ? `  ${Math.min(plankReq, this.planksAvailable)}/${plankReq}📜` : '';
+    this.padLabel.setText(`${t('buildTentSign')}  ${remainingC}🪙${plankLabel}`);
     this.drawPadSign(this.signSX, this.signSY, this.signSW, pct);
   }
 
@@ -1233,6 +1310,87 @@ export default class GameScene extends Phaser.Scene {
     if (this.gameOver) return;
     const dt = delta / 1000;
     this.sceneTimeMs += delta;
+
+    // Watchtower — fires arrows at nearest live wolf within range.
+    // No worker required — tower is "manned" by its lookout sprite as soon as
+    // it stands. Each cycle (default 1.2 s) spawns one arrow that tweens into
+    // the target and applies damage on landing.
+    for (const st of this.stations) {
+      if (st.cfg.kind !== 'watchtower') continue;
+      const cycle = st.cfg.cycleMs ?? DEFAULT_CYCLE_MS.watchtower;
+      st.cycleMs = Math.max(0, st.cycleMs - delta);
+      if (st.cycleMs > 0) continue;
+      let best: AnimalEntity | null = null;
+      let bestD2 = 240 * 240;
+      for (const a of this.animals) {
+        if (a.state === 'dead') continue;
+        if (a.atlasKey !== 'wolf') continue;
+        const d2 = (a.lx - st.sx) ** 2 + (a.ly - st.sy) ** 2;
+        if (d2 < bestD2) { bestD2 = d2; best = a; }
+      }
+      if (!best) { st.cycleMs = cycle * 0.25; continue; }
+      const target = best;
+      const arrow = this.add.image(st.sx, st.sy - 40, 'projectile_arrow_01')
+        .setDepth(2000).setDisplaySize(28, 8);
+      this.tweens.add({
+        targets: arrow, x: target.lx, y: target.ly - 20,
+        duration: 320, ease: 'Linear',
+        onComplete: () => {
+          arrow.destroy();
+          if (target.state === 'dead') return;
+          target.hp -= 1; target.hitFlashMs = 180;
+          this.woodchipEmitter.emitParticleAt(target.lx, target.ly - 20, 5);
+          if (target.hp <= 0) this.killAnimal(target);
+        },
+      });
+      st.cycleMs = cycle;
+    }
+
+    // Supply sled — check readiness each frame regardless of worker (sled is
+    // passive once inputs arrive, no manning required).
+    for (const st of this.stations) {
+      if (st.cfg.kind !== 'supply_sled') continue;
+      const inv = st.inputsByResource ?? (st.inputsByResource = {});
+      const needMeat = 10; const needPlanks = 5; const payout = 200;
+      if ((inv.meat_ground ?? 0) >= needMeat && (inv.plank ?? 0) >= needPlanks) {
+        inv.meat_ground -= needMeat; inv.plank -= needPlanks;
+        for (let i = 0; i < needMeat + needPlanks; i++) this.popPileSprite(st, true);
+        this.coins += payout;
+        this.supplyRunsCompleted += 1;
+        this.advanceGoalStage();
+        safePlay(this, 'snd_build_complete', { volume: 0.55 });
+        const spr = st.sprite as Phaser.GameObjects.Image;
+        this.tweens.add({
+          targets: spr,
+          x: { from: st.sx, to: st.sx + 300 },
+          alpha: { from: 1, to: 0 }, duration: 900, ease: 'Quad.In',
+          onComplete: () => { spr.setPosition(st.sx, st.sy).setAlpha(1); },
+        });
+      }
+    }
+
+    // Station manned-time accumulator (telemetry at WIN/LOSE).
+    for (const st of this.stations) {
+      if (st.workerId >= 0) {
+        const anyst = st as unknown as { telMannedMs?: number };
+        anyst.telMannedMs = (anyst.telMannedMs ?? 0) + delta;
+      }
+    }
+
+    // Station visuals — tint reflects manned state and player-bumped priority.
+    // Unmanned stations dim; bumped stations get a warm glow so the player
+    // sees the result of tapping. Cheap per-frame tint set, no object alloc.
+    for (const st of this.stations) {
+      const spr = st.sprite as Phaser.GameObjects.Image;
+      if (!spr) continue;
+      if (st.workerId >= 0) {
+        if (st.priorityBump < 0) spr.setTint(0xffe3a8);   // bumped + manned
+        else                      spr.clearTint();         // manned (normal)
+      } else {
+        if (st.priorityBump < 0) spr.setTint(0xffdc8a);   // bumped + waiting
+        else                      spr.setTint(0x9fa4aa);   // idle / dim
+      }
+    }
 
     // Player respawn countdown while dead
     if (this.playerDead) {
@@ -1435,7 +1593,9 @@ export default class GameScene extends Phaser.Scene {
     if (!this.tentBuilt) {
       const pdx = this.playerLX - this.padX; const pdy = this.playerLY - this.padY;
       const inPadRange = pdx*pdx + pdy*pdy < padCfg.standRangePx ** 2;
-      if (inPadRange && this.coins > 0) {
+      const plankReq = padCfg.costPlanks ?? 0;
+      const planksOk = plankReq === 0 || this.planksAvailable >= plankReq;
+      if (inPadRange && this.coins > 0 && planksOk) {
         // Pay-in deposits full cost in ~2.5s regardless of per-level config so the
         // build never feels like dwelling. Progress persists via coinsPaidForTent even
         // if the player leaves and returns (never reset mid-level).
@@ -1443,10 +1603,13 @@ export default class GameScene extends Phaser.Scene {
         const pay = Math.min(this.coins, scaledRate * dt);
         this.coins -= pay; this.coinsPaidForTent += pay;
         this.updatePadSign();
-        if (this.coinsPaidForTent >= padCfg.costCoins) this.buildTent();
+        if (this.coinsPaidForTent >= padCfg.costCoins) {
+          // Cabin-style pad: also deduct plank stock when complete.
+          if (plankReq > 0) this.planksAvailable -= plankReq;
+          this.buildTent();
+        }
       } else if (inPadRange && this.coins === 0) {
         onPadWithNoCoins = true;
-        // Re-render sign so returning players see current remaining + progress bar immediately.
         this.updatePadSign();
       }
     }
@@ -1467,9 +1630,26 @@ export default class GameScene extends Phaser.Scene {
         drainMul = warmupMul + (1 - warmupMul) * prog;
       }
     }
-    this.fuel = Math.max(0, this.fuel - cfg.fire.fuelDrainPerSec * drainMul * dt);
+    // Wave 12 — blizzard event: triggers once rescuedCount hits threshold.
+    // Multiplies fuel drain + freeze rate for a fixed duration; snow emitter
+    // scales up for visual drama.
+    const blz = (cfg as any).blizzard;
+    if (blz && !this.blizzardTriggered && this.rescuedCount >= blz.triggerAtRescued) {
+      this.blizzardTriggered = true;
+      this.blizzardMs = (blz.durationSec ?? 60) * 1000;
+      this.cameras.main.shake(180, 0.006);
+      this.stageBannerText = getLang() === 'tr' ? 'KAR FIRTINASI!' : 'BLIZZARD!';
+      this.stageBannerMs = 2500;
+    }
+    let blzFuelMul = 1; let blzFreezeMul = 1;
+    if (this.blizzardMs > 0) {
+      this.blizzardMs = Math.max(0, this.blizzardMs - delta);
+      blzFuelMul = (blz?.fuelDrainMultiplier ?? 2);
+      blzFreezeMul = (blz?.freezeMultiplier ?? 1.5);
+    }
+    this.fuel = Math.max(0, this.fuel - cfg.fire.fuelDrainPerSec * drainMul * blzFuelMul * dt);
     if (this.fuel === 0) {
-      this.freezeMeter += cfg.fire.freezeRatePerSec * dt;
+      this.freezeMeter += cfg.fire.freezeRatePerSec * blzFreezeMul * dt;
       if (this.freezeMeter >= cfg.fire.freezeMax) { this.loseGame(); return; }
     } else {
       this.freezeMeter = Math.max(0, this.freezeMeter - 2 * dt);
@@ -1566,9 +1746,30 @@ export default class GameScene extends Phaser.Scene {
       const stopR = useRingTarget ? 6 : 68;  // ring slot: nearly on top; follow player: loose radius
       if (d > stopR) {
         const speed = cfg.workerWalkSpeed * WORKER_SPEED_MULT;
-        const move = Math.min(d - stopR, speed * dt);
-        sv.lx += (dx / d) * move;
-        sv.ly += (dy / d) * move;
+        // Pathing for the slow drift toward the ring slot — the player-follow
+        // target moves fast so we only path when going to the ring.
+        if (useRingTarget && d > 48) {
+          this.ensurePathA(sv, tgtX, tgtY);
+          const moved = this.followPathA(sv, speed, dt, true);
+          if (!moved) {
+            const move = Math.min(d - stopR, speed * dt);
+            sv.lx += (dx / d) * move;
+            sv.ly += (dy / d) * move;
+          }
+          const sr = this.checkStuck(sv, delta);
+          if (sr === 'giveup') {
+            sv.pathAttempts = 0;
+            sv.path = undefined; sv.pathIdx = 0;
+            sv.pathTargetX = undefined; sv.pathTargetY = undefined;
+          }
+        } else {
+          const move = Math.min(d - stopR, speed * dt);
+          sv.lx += (dx / d) * move;
+          sv.ly += (dy / d) * move;
+          sv.stuckMs = 0; sv.pathAttempts = 0;
+        }
+      } else {
+        sv.stuckMs = 0; sv.pathAttempts = 0;
       }
 
       // Separation (reused) so the group spreads and never stacks at the gate.
@@ -1660,7 +1861,10 @@ export default class GameScene extends Phaser.Scene {
       for (const a of this.animals) {
         if (a.state === 'dead') continue;
         const d2 = (this.playerLX - a.lx)**2 + (this.playerLY - a.ly)**2;
-        if (d2 < a.spec.attackRange**2 && d2 < nearestDist2) { nearestDist2 = d2; nearestAnimal = a; }
+        // Peaceful animals (stags) have attackRange=0; use a floor so the
+        // hero can still land a melee hit at ~70px.
+        const effRange = Math.max(a.spec.attackRange, 70);
+        if (d2 < effRange * effRange && d2 < nearestDist2) { nearestDist2 = d2; nearestAnimal = a; }
       }
       if (nearestAnimal) {
         const a = nearestAnimal;
@@ -1689,7 +1893,8 @@ export default class GameScene extends Phaser.Scene {
           if (hitTarget.hp <= 0) {
             this.killAnimal(hitTarget);
           } else {
-            if (hitTarget.atlasKey === 'deer' && hitTarget.hp < hitTarget.maxHp * hitTarget.spec.fleeBelowHpPct) {
+            if ((hitTarget.atlasKey === 'deer' || hitTarget.atlasKey === 'stag')
+                && hitTarget.hp < hitTarget.maxHp * hitTarget.spec.fleeBelowHpPct) {
               hitTarget.state = 'flee'; hitTarget.fleeMs = hitTarget.spec.fleeTimeSec * 1000;
             }
             if (hitTarget.isBoss && !hitTarget.summonedMinions && hitTarget.hp <= hitTarget.maxHp * (hitTarget.spec.summonAtHpPct ?? 0.5)) {
@@ -1838,7 +2043,21 @@ export default class GameScene extends Phaser.Scene {
         if (a.roamChangeMs <= 0) this.pickRoamTarget(a);
         const ax = a.targetLx - a.lx; const ay = a.targetLy - a.ly;
         const ad2 = ax*ax + ay*ay;
-        if (ad2 > 64) { const ad=Math.sqrt(ad2); a.lx+=(ax/ad)*a.spec.speed*dt; a.ly+=(ay/ad)*a.spec.speed*dt; }
+        if (ad2 > 64) {
+          // Pathing for roaming animals so they walk around trees/fences
+          // instead of grinding into them (needed for L8+ with heavy decor).
+          this.ensurePathA(a, a.targetLx, a.targetLy);
+          const moved = this.followPathA(a, a.spec.speed, dt, false);
+          if (!moved) {
+            const ad = Math.sqrt(ad2);
+            a.lx += (ax/ad)*a.spec.speed*dt;
+            a.ly += (ay/ad)*a.spec.speed*dt;
+          }
+          const sr = this.checkStuck(a, delta);
+          if (sr === 'giveup') { this.pickRoamTarget(a); a.pathAttempts = 0; }
+        } else {
+          a.stuckMs = 0; a.pathAttempts = 0;
+        }
         // Pick the closest viable target (player or a worker outside the fire ring).
         // Workers get hunted when wolves can reach them, breaking production chains
         // until the hero clears the wolves — "Wolves at the Lake" (Wave 4).
@@ -2209,12 +2428,18 @@ export default class GameScene extends Phaser.Scene {
   private buildTent(): void {
     this.tentBuilt = true;
     this.padGfx.destroy(); this.padLabel.destroy();
+    // Pad can be a tent (coins only) or a cabin (planks + coins). Use the
+    // asset key the level config provides so both render correctly.
+    const padCfg = cfg.buildPads[0];
+    const assetKey = padCfg.asset ?? 'building_tent_canvas_01';
+    const isCabin = assetKey.startsWith('building_cabin');
     this.tentShadow = this.add.image(this.padX, this.padY, 'entity_shadow')
-      .setDisplaySize(70, 26).setDepth(2);
-    this.tentSprite = this.add.image(this.padX, this.padY, 'building_tent_canvas_01')
-      .setDisplaySize(104, 104).setOrigin(0.5, 0.85);
+      .setDisplaySize(isCabin ? 86 : 70, isCabin ? 30 : 26).setDepth(2);
+    this.tentSprite = this.add.image(this.padX, this.padY, assetKey)
+      .setDisplaySize(isCabin ? 118 : 104, isCabin ? 118 : 104).setOrigin(0.5, 0.85);
     this.depthGroup.push(this.tentSprite);
     this.obstacles.push({ x: this.padX, y: this.padY, r: 30 });
+    this.navGrid.setObstacles(this.obstacles);
     this.tweens.add({
       targets: this.tentSprite,
       scaleX: { from: 0, to: this.tentSprite.scaleX },
@@ -2312,15 +2537,38 @@ export default class GameScene extends Phaser.Scene {
 
   // Resolve the destination for a hauler holding this resource. Prefers a
   // consumer station of the mapped kind; falls back to the fire ("drop here").
+  // Wave 7 fallback: meat_raw with no meat_grinder routes to the cook_pot
+  // (which consumes meat_raw as an alternate input).
   private resolveHaulDest(
     rid: ResourceId,
   ): { kind: 'fire' } | { kind: 'station'; station: StationInstance } {
     const target = HAUL_DESTINATION[rid];
+    // Planks: if a supply_sled exists on this level, haul planks to it first.
+    if (rid === 'plank') {
+      const sleds = this.stations.filter(s => s.cfg.kind === 'supply_sled');
+      if (sleds.length > 0) {
+        sleds.sort((a, b) => (a.inputsByResource?.plank ?? 0) - (b.inputsByResource?.plank ?? 0));
+        return { kind: 'station', station: sleds[0] };
+      }
+    }
     if (target === 'fire') return { kind: 'fire' };
-    // Find an existing consumer station of that kind; prefer closer to fire.
-    const candidates = this.stations.filter(s => s.cfg.kind === target);
+    let candidates = this.stations.filter(s => s.cfg.kind === target);
+    if (candidates.length === 0 && rid === 'meat_raw') {
+      candidates = this.stations.filter(s => s.cfg.kind === 'cook_pot');
+    }
+    if (candidates.length === 0 && rid === 'meat_ground') {
+      // Wave 8 fallback: no supply_sled yet → feed cook_pot with ground meat
+      // so the butcher → grinder → cook chain closes without L12 content.
+      candidates = this.stations.filter(s => s.cfg.kind === 'cook_pot');
+    }
     if (candidates.length === 0) return { kind: 'fire' };
-    candidates.sort((a, b) => a.inputCount - b.inputCount);
+    // Sort supply_sled by (meat_ground count) ascending so haulers spread.
+    if (candidates[0].cfg.kind === 'supply_sled') {
+      candidates.sort((a, b) =>
+        (a.inputsByResource?.[rid] ?? 0) - (b.inputsByResource?.[rid] ?? 0));
+    } else {
+      candidates.sort((a, b) => a.inputCount - b.inputCount);
+    }
     return { kind: 'station', station: candidates[0] };
   }
 
@@ -2342,8 +2590,13 @@ export default class GameScene extends Phaser.Scene {
       this.coins += 10;
       this.fuel = Math.min(cfg.fire.fuelMax, this.fuel + Math.floor(cfg.fire.fuelPerLog / 2));
       this.advanceGoalStage();
+    } else if (rid === 'plank') {
+      // Planks pile at the fire for cabin construction.
+      this.planksAvailable += 1;
+      this.coins += 3;
+      this.advanceGoalStage();
     } else {
-      // plank, meat_raw/ground etc. that reach the fire as fallback.
+      // meat_raw/ground etc. fallback.
       this.coins += 5;
     }
   }
@@ -2383,21 +2636,116 @@ export default class GameScene extends Phaser.Scene {
     if (w.activeAnim !== 'carry_walk') w.activeAnim = 'carry_walk';
   }
 
+  // ─── NavGrid follower (generic across workers, survivors, animals) ────────
+  // A "path agent" is any object with lx/ly + path state fields.
+  //
+  // Recompute policy: only recompute when the target actually changes.
+  // An "exhausted" path (pathIdx >= length) stays exhausted — the caller does
+  // the last-leg direct approach. This stops oscillating units (pushed back
+  // by separation/collision) from calling A* every frame.
+  private ensurePathA(a: PathState, tx: number, ty: number): boolean {
+    if (a.pathTargetX !== tx || a.pathTargetY !== ty) {
+      const p = this.navGrid.findPath(a.lx, a.ly, tx, ty);
+      a.path = p; a.pathIdx = 0; a.pathTargetX = tx; a.pathTargetY = ty;
+      (a as unknown as { telRepaths?: number }).telRepaths =
+        ((a as unknown as { telRepaths?: number }).telRepaths ?? 0) + 1;
+      return p.length > 0;
+    }
+    return !!a.path && a.pathIdx != null && a.pathIdx < a.path.length;
+  }
+
+  // Follows the active path at `speed` px/s. If `project` is true the velocity
+  // is passed through projectVelocityFromWalls for wall-slide (used for the
+  // hero/worker who live inside the camp). Animals already clamp themselves
+  // to the camp outer edge in a dedicated post-step so they skip projection.
+  private followPathA(a: PathState, speed: number, dt: number, project: boolean): boolean {
+    if (!a.path || a.pathIdx == null || a.pathIdx >= a.path.length) return false;
+    while (a.pathIdx < a.path.length) {
+      const wp = a.path[a.pathIdx];
+      const dx = wp.x - a.lx; const dy = wp.y - a.ly;
+      if (dx * dx + dy * dy < 22 * 22) { a.pathIdx++; continue; }
+      break;
+    }
+    if (a.pathIdx >= a.path.length) return false;
+    const wp = a.path[a.pathIdx];
+    const dx = wp.x - a.lx; const dy = wp.y - a.ly;
+    const d = Math.sqrt(dx * dx + dy * dy) || 1;
+    let vx = (dx / d) * speed; let vy = (dy / d) * speed;
+    if (project) {
+      const proj = this.projectVelocityFromWalls(vx, vy, a.lx, a.ly);
+      vx = proj.vx; vy = proj.vy;
+    }
+    a.lx += vx * dt; a.ly += vy * dt;
+    const dir = this.velToDir(vx, vy);
+    if (dir >= 0 && 'lastDir' in a) {
+      (a as unknown as { lastDir: number }).lastDir = dir;
+    }
+    return true;
+  }
+
+  // 1 s stuck (<4px moved) → force repath (by invalidating target cache).
+  // 3 failed repaths → return 'giveup'. The caller decides what give-up means.
+  private checkStuck(a: PathState, delta: number): 'ok' | 'repath' | 'giveup' {
+    a.stuckMs += delta;
+    if (a.stuckMs < 1000) return 'ok';
+    const movedSq = (a.lx - a.stuckCheckX) ** 2 + (a.ly - a.stuckCheckY) ** 2;
+    a.stuckMs = 0; a.stuckCheckX = a.lx; a.stuckCheckY = a.ly;
+    if (movedSq >= 16) { a.pathAttempts = 0; return 'ok'; }
+    (a as unknown as { telStuckEvents?: number }).telStuckEvents =
+      ((a as unknown as { telStuckEvents?: number }).telStuckEvents ?? 0) + 1;
+    a.pathAttempts = (a.pathAttempts ?? 0) + 1;
+    // Invalidate the cached target so the next ensurePath call recomputes.
+    a.path = undefined; a.pathIdx = 0;
+    a.pathTargetX = undefined; a.pathTargetY = undefined;
+    return (a.pathAttempts ?? 0) >= 3 ? 'giveup' : 'repath';
+  }
+
+  // ─── Worker-specific wrappers that handle "give up" by releasing station ──
+  private ensurePath(w: Survivor, tx: number, ty: number): boolean {
+    return this.ensurePathA(w, tx, ty);
+  }
+  private followPath(w: Survivor, speed: number, dt: number): boolean {
+    return this.followPathA(w, speed, dt, true);
+  }
+  private stuckRepath(w: Survivor, delta: number): boolean {
+    const r = this.checkStuck(w, delta);
+    if (r !== 'giveup') return false;
+    if (w.workerStation) { w.workerStation.workerId = -1; w.workerStation = null; }
+    w.workerHaulId = null; w.workerHaulDest = null;
+    w.workerState = 'idle';
+    w.pathAttempts = 0;
+    return true;
+  }
+
   private updateWorker(w: Survivor, dt: number, delta: number): void {
     if (!w.workerState) w.workerState = 'idle';
     const prevLxW = w.lx; const prevLyW = w.ly;
+    // Telemetry accounting (per-frame per-worker — microscopic cost).
+    switch (w.workerState) {
+      case 'idle':      w.telTimeIdleMs    = (w.telTimeIdleMs    ?? 0) + delta; break;
+      case 'toTree':
+      case 'toFire':
+      case 'toStation':
+      case 'haul':      w.telTimeWalkingMs = (w.telTimeWalkingMs ?? 0) + delta; break;
+      case 'chopping':
+      case 'atStation': w.telTimeWorkingMs = (w.telTimeWorkingMs ?? 0) + delta; break;
+      case 'fleeing':   w.telTimeFleeingMs = (w.telTimeFleeingMs ?? 0) + delta; break;
+    }
 
     switch (w.workerState) {
       case 'fleeing': {
-        // Sprint toward the fire using the SAME wall-aware navigation as 'toFire'
-        // so workers can path through the palisade gate. Direct movement was
-        // getting stuck on walls (L6 fishing workers at south stations).
+        // NavGrid path through palisade gate; fallback to projectVelocityFromWalls
+        // if the grid can't find a path.
         const dxF = this.fireX - w.lx; const dyF = this.fireY - w.ly;
         const dF = Math.sqrt(dxF*dxF + dyF*dyF);
         if (dF > 55) {
           const fleeSpeed = cfg.workerWalkSpeed * WORKER_SPEED_MULT * 1.5;
-          const wvF = this.projectVelocityFromWalls((dxF/dF)*fleeSpeed, (dyF/dF)*fleeSpeed, w.lx, w.ly);
-          w.lx += wvF.vx * dt; w.ly += wvF.vy * dt;
+          this.ensurePath(w, this.fireX, this.fireY);
+          const moved = this.followPath(w, fleeSpeed, dt);
+          if (!moved) {
+            const wvF = this.projectVelocityFromWalls((dxF/dF)*fleeSpeed, (dyF/dF)*fleeSpeed, w.lx, w.ly);
+            w.lx += wvF.vx * dt; w.ly += wvF.vy * dt;
+          }
           const toFireDir = this.velToDir(dxF, dyF);
           if (toFireDir >= 0) w.lastDir = toFireDir;
           w.activeAnim = 'walk';
@@ -2407,9 +2755,8 @@ export default class GameScene extends Phaser.Scene {
           if (w.stuckMs >= 3000) {
             const movedSq = (w.lx - w.stuckCheckX) ** 2 + (w.ly - w.stuckCheckY) ** 2;
             if (movedSq < 100) {
-              // Blocked path (e.g. wall corner) — just go idle so the main
-              // loop re-routes via the proper toTree / toStation pathing.
               w.workerState = 'idle'; w.stuckMs = 0;
+              w.path = undefined; w.pathIdx = 0;
             } else {
               w.stuckMs = 0; w.stuckCheckX = w.lx; w.stuckCheckY = w.ly;
             }
@@ -2469,27 +2816,66 @@ export default class GameScene extends Phaser.Scene {
         const dx = st.sx - w.lx; const dy = st.sy - w.ly; const d = Math.sqrt(dx*dx + dy*dy);
         if (d < 36) {
           w.workerState = 'atStation';
-          w.stuckMs = 0;
+          w.stuckMs = 0; w.pathAttempts = 0;
+          w.path = undefined; w.pathIdx = 0; w.pathTargetX = undefined; w.pathTargetY = undefined;
           const kind = st.cfg.kind;
           w.activeAnim = (kind === 'ice_hole' || kind === 'butcher_table' || kind === 'lumber_mill') ? 'chop' : 'idle';
           const toStDir = this.velToDir(st.sx - w.lx, st.sy - w.ly);
           if (toStDir >= 0) w.lastDir = toStDir;
           st.cycleMs = st.cfg.cycleMs ?? DEFAULT_CYCLE_MS[st.cfg.kind] ?? 4000;
         } else {
-          const wvSt = this.projectVelocityFromWalls(
-            (dx/d)*cfg.workerWalkSpeed*WORKER_SPEED_MULT,
-            (dy/d)*cfg.workerWalkSpeed*WORKER_SPEED_MULT,
-            w.lx, w.ly,
-          );
-          w.lx += wvSt.vx*dt; w.ly += wvSt.vy*dt;
+          this.ensurePath(w, st.sx, st.sy);
+          const moved = this.followPath(w, cfg.workerWalkSpeed * WORKER_SPEED_MULT, dt);
+          if (!moved) {
+            const speed = cfg.workerWalkSpeed * WORKER_SPEED_MULT;
+            const pv = this.projectVelocityFromWalls((dx / d) * speed, (dy / d) * speed, w.lx, w.ly);
+            w.lx += pv.vx * dt; w.ly += pv.vy * dt;
+          }
+          if (this.stuckRepath(w, delta)) break;
         }
         break;
       }
       case 'atStation': {
         const st = w.workerStation;
         if (!st) { w.workerState = 'idle'; break; }
+        // Wave 9 — supply sled: multi-input station. Needs 10 meat_ground + 5
+        // planks to complete a run. On completion: pay 200 coins, reset inputs,
+        // increment supplyRunsCompleted, trigger a sled-departure tween.
+        if (st.cfg.kind === 'supply_sled') {
+          const inv = st.inputsByResource ?? (st.inputsByResource = {});
+          const needMeat = 10; const needPlanks = 5; const payout = 200;
+          if ((inv.meat_ground ?? 0) >= needMeat && (inv.plank ?? 0) >= needPlanks) {
+            inv.meat_ground -= needMeat; inv.plank -= needPlanks;
+            // Remove the matching visual pile sprites (quick visual flush).
+            for (let i = 0; i < needMeat + needPlanks; i++) this.popPileSprite(st, true);
+            this.coins += payout;
+            this.supplyRunsCompleted += 1;
+            this.advanceGoalStage();
+            safePlay(this, 'snd_build_complete', { volume: 0.55 });
+            this.tweens.add({
+              targets: st.sprite as Phaser.GameObjects.Image,
+              x: { from: st.sx, to: st.sx + 300 },
+              alpha: { from: 1, to: 0 }, duration: 900, ease: 'Quad.In',
+              onComplete: () => {
+                const spr = st.sprite as Phaser.GameObjects.Image;
+                spr.setPosition(st.sx, st.sy).setAlpha(1);
+              },
+            });
+          }
+          // No worker production cycle for supply_sled — it waits on haulers.
+          w.activeAnim = 'idle';
+          break;
+        }
         // Consumer stations need an input unit before each cycle.
         const needInput = STATION_CONSUMES[st.cfg.kind];
+        // Lumber mills pull directly from the fire fuel pool (logs stockpile)
+        // instead of requiring a separate worker to haul logs — fuel is already
+        // the global log inventory and this keeps the Wave 5 chain simple.
+        if (needInput === 'log' && st.inputCount < 1 && this.fuel >= cfg.fire.fuelPerLog) {
+          this.fuel -= cfg.fire.fuelPerLog;
+          st.inputCount += 1;
+          this.pushPileSprite(st, 'log' as ResourceId, true);
+        }
         if (needInput && st.inputCount <= 0) {
           w.activeAnim = 'idle';
           break;
@@ -2506,6 +2892,10 @@ export default class GameScene extends Phaser.Scene {
           if (produces) {
             // Build a visible pile. Worker keeps producing up to BATCH_SIZE before hauling.
             st.outputCount += 1;
+            if (produces === 'plank') {
+              this.planksProduced += 1;
+              this.advanceGoalStage();
+            }
             this.pushPileSprite(st, produces, false);
             const BATCH = 3;
             if (st.outputCount >= BATCH) {
@@ -2536,12 +2926,20 @@ export default class GameScene extends Phaser.Scene {
         const tx = dst.kind === 'fire' ? this.fireX : dst.station.sx;
         const ty = dst.kind === 'fire' ? this.fireY : dst.station.sy;
         const dx = tx - w.lx; const dy = ty - w.ly; const d = Math.sqrt(dx*dx + dy*dy);
-        if (d < 40) {
+        const arriveR = dst.kind === 'fire' ? 72 : 40;  // fire's 62 px obstacle keeps us outside
+        if (d < arriveR) {
           // Drop the resource
           if (dst.kind === 'fire') {
             this.deliverToFire(w.workerHaulId);
           } else {
-            dst.station.inputCount += 1;
+            // Supply sled tracks per-resource counts (multi-input station).
+            if (dst.station.cfg.kind === 'supply_sled') {
+              if (!dst.station.inputsByResource) dst.station.inputsByResource = {};
+              const rid = w.workerHaulId;
+              dst.station.inputsByResource[rid] = (dst.station.inputsByResource[rid] ?? 0) + 1;
+            } else {
+              dst.station.inputCount += 1;
+            }
             this.pushPileSprite(dst.station, w.workerHaulId, true);
           }
           w.workerHaulId = null; w.workerHaulDest = null;
@@ -2563,13 +2961,17 @@ export default class GameScene extends Phaser.Scene {
           if (w.workerStation) { w.workerStation.workerId = -1; w.workerStation = null; }
           w.workerState = 'idle';
           w.activeAnim = 'idle';
+          w.path = undefined; w.pathIdx = 0; w.pathTargetX = undefined; w.pathTargetY = undefined;
+          w.pathAttempts = 0; w.stuckMs = 0;
         } else {
-          const wvH = this.projectVelocityFromWalls(
-            (dx/d)*cfg.workerWalkSpeed*WORKER_SPEED_MULT,
-            (dy/d)*cfg.workerWalkSpeed*WORKER_SPEED_MULT,
-            w.lx, w.ly,
-          );
-          w.lx += wvH.vx*dt; w.ly += wvH.vy*dt;
+          this.ensurePath(w, tx, ty);
+          const moved = this.followPath(w, cfg.workerWalkSpeed * WORKER_SPEED_MULT, dt);
+          if (!moved) {
+            const speed = cfg.workerWalkSpeed * WORKER_SPEED_MULT;
+            const pv = this.projectVelocityFromWalls((dx / d) * speed, (dy / d) * speed, w.lx, w.ly);
+            w.lx += pv.vx * dt; w.ly += pv.vy * dt;
+          }
+          if (this.stuckRepath(w, delta)) break;
         }
         break;
       }
@@ -2578,6 +2980,8 @@ export default class GameScene extends Phaser.Scene {
         const tx = w.workerTarget.sprite.x; const ty = w.workerTarget.sprite.y;
         const dx = tx - w.lx; const dy = ty - w.ly; const d = Math.sqrt(dx*dx + dy*dy);
         if (d < 30) {
+          w.path = undefined; w.pathIdx = 0; w.pathTargetX = undefined; w.pathTargetY = undefined;
+          w.pathAttempts = 0;
           w.workerState = 'chopping'; w.stuckMs = 0;
           w.activeAnim = 'chop';
           // Face the tree
@@ -2601,19 +3005,18 @@ export default class GameScene extends Phaser.Scene {
             }
           });
         } else {
-          const wvTree = this.projectVelocityFromWalls((dx/d)*cfg.workerWalkSpeed*WORKER_SPEED_MULT, (dy/d)*cfg.workerWalkSpeed*WORKER_SPEED_MULT, w.lx, w.ly);
-          w.lx += wvTree.vx*dt; w.ly += wvTree.vy*dt;
+          this.ensurePath(w, tx, ty);
+          const moved = this.followPath(w, cfg.workerWalkSpeed * WORKER_SPEED_MULT, dt);
+          if (!moved) {
+            const speed = cfg.workerWalkSpeed * WORKER_SPEED_MULT;
+            const pv = this.projectVelocityFromWalls((dx / d) * speed, (dy / d) * speed, w.lx, w.ly);
+            w.lx += pv.vx * dt; w.ly += pv.vy * dt;
+          }
           const wSep = this.applySeparation(w.lx, w.ly, w);
           const wo = this.constrainToObstacles(wSep.x, wSep.y);
           const wc = this.wallConstrain(prevLxW, prevLyW, wo.x, wo.y);
           w.lx = wc.x; w.ly = wc.y;
-          // Stuck detector: re-path after 3s without progress
-          w.stuckMs += delta;
-          if (w.stuckMs >= 3000) {
-            const movedSq = (w.lx - w.stuckCheckX) ** 2 + (w.ly - w.stuckCheckY) ** 2;
-            if (movedSq < 100) { w.workerState = 'idle'; w.stuckMs = 0; break; }
-            w.stuckMs = 0; w.stuckCheckX = w.lx; w.stuckCheckY = w.ly;
-          }
+          if (this.stuckRepath(w, delta)) break;
         }
         break;
       }
@@ -2631,21 +3034,21 @@ export default class GameScene extends Phaser.Scene {
         if (d < deliverThresh) {
           this.fuel = Math.min(cfg.fire.fuelMax, this.fuel + cfg.fire.fuelPerLog);
           this.coins += cfg.fire.coinsPerLog; w.workerCarrying = 0; w.workerState = 'idle'; w.activeAnim = 'idle';
-          w.stuckMs = 0;
+          w.stuckMs = 0; w.pathAttempts = 0;
+          w.path = undefined; w.pathIdx = 0; w.pathTargetX = undefined; w.pathTargetY = undefined;
         } else {
-          const wvFire = this.projectVelocityFromWalls((dx/d)*cfg.workerWalkSpeed*WORKER_SPEED_MULT, (dy/d)*cfg.workerWalkSpeed*WORKER_SPEED_MULT, w.lx, w.ly);
-          w.lx += wvFire.vx*dt; w.ly += wvFire.vy*dt;
+          this.ensurePath(w, slotX, slotY);
+          const moved = this.followPath(w, cfg.workerWalkSpeed * WORKER_SPEED_MULT, dt);
+          if (!moved) {
+            const speed = cfg.workerWalkSpeed * WORKER_SPEED_MULT;
+            const pv = this.projectVelocityFromWalls((dx / d) * speed, (dy / d) * speed, w.lx, w.ly);
+            w.lx += pv.vx * dt; w.ly += pv.vy * dt;
+          }
           const wSep = this.applySeparation(w.lx, w.ly, w);
           const wo = this.constrainToObstacles(wSep.x, wSep.y);
           const wc = this.wallConstrain(prevLxW, prevLyW, wo.x, wo.y);
           w.lx = wc.x; w.ly = wc.y;
-          // Stuck detector: re-path after 3s without progress
-          w.stuckMs += delta;
-          if (w.stuckMs >= 3000) {
-            const movedSq = (w.lx - w.stuckCheckX) ** 2 + (w.ly - w.stuckCheckY) ** 2;
-            if (movedSq < 100) { w.workerState = 'idle'; w.stuckMs = 0; break; }
-            w.stuckMs = 0; w.stuckCheckX = w.lx; w.stuckCheckY = w.ly;
-          }
+          if (this.stuckRepath(w, delta)) break;
         }
         break;
       }
@@ -2688,6 +3091,7 @@ export default class GameScene extends Phaser.Scene {
 
   private loseGame(): void {
     this.gameOver = true;
+    this._dumpTelemetry('LOSE');
     this.time.delayedCall(800, () => {
       this.scene.stop('UIScene');
       this.scene.start('LoseScene', { levelNum: this.currentLevelNum });
@@ -2700,9 +3104,42 @@ export default class GameScene extends Phaser.Scene {
       : this.rescuedCount >= cfg.goal.survivorsToRescue && this.tentBuilt;
     if (done && !this.gameOver) {
       this.gameOver = true;
+      this._dumpTelemetry('WIN');
       safePlay(this, 'snd_win_jingle', { volume: 0.70 });
       this.tweens.add({ targets: this.cameras.main, zoom: 1.65, duration: 1100, ease: 'Quad.InOut' });
       this.time.delayedCall(1200, () => { this.scene.stop('UIScene'); this.scene.start('WinScene', { levelNum: this.currentLevelNum }); });
+    }
+  }
+
+  private _dumpTelemetry(reason: string): void {
+    const ng = this.navGrid.stats;
+    const sec = Math.max(1, this.sceneTimeMs / 1000);
+    const avgPath = ng.pathLenSum > 0 ? (ng.pathLenSum / Math.max(1, ng.calls - ng.emptyResults)) : 0;
+    const avgStraight = ng.straightSum > 0 ? (ng.straightSum / Math.max(1, ng.calls)) : 0;
+    const navSummary = `[tel] L${this.currentLevelNum} ${reason} t=${sec.toFixed(1)}s | A*calls=${ng.calls} (${(ng.calls / sec).toFixed(2)}/s) ms=${ng.totalMs.toFixed(0)} empty=${ng.emptyResults} avgPath=${avgPath.toFixed(0)}px avgStraight=${avgStraight.toFixed(0)}px`;
+    console.log(navSummary);
+    // Chain-output accounting — confirms that production stages fired, not
+    // just "coincidence" wins where stations were bypassed.
+    console.log(`[chain] L${this.currentLevelNum} planks=${this.planksProduced} fish=${this.fishCaught} cooked=${this.cookedServed} kills=${this.animalsKilled} supplyRuns=${this.supplyRunsCompleted} rescued=${this.rescuedCount} tent=${this.tentBuilt}`);
+    // Per-station "manned" time snapshot (approx via telMannedMs tracked below).
+    const parts: string[] = [];
+    for (const st of this.stations) {
+      const kind = st.cfg.kind;
+      const mms = (st as unknown as { telMannedMs?: number }).telMannedMs ?? 0;
+      parts.push(`${kind}=${Math.round(mms/1000)}s`);
+    }
+    if (parts.length > 0) console.log(`[stations] L${this.currentLevelNum} manned ${parts.join(' ')}`);
+    const workers = this.survivors.filter(s => s.state === 'worker');
+    for (let i = 0; i < workers.length; i++) {
+      const w = workers[i];
+      const rep = w.telRepaths ?? 0;
+      const stuck = w.telStuckEvents ?? 0;
+      const idle = Math.round((w.telTimeIdleMs ?? 0) / 1000);
+      const walk = Math.round((w.telTimeWalkingMs ?? 0) / 1000);
+      const work = Math.round((w.telTimeWorkingMs ?? 0) / 1000);
+      const flee = Math.round((w.telTimeFleeingMs ?? 0) / 1000);
+      const rpm = (rep / (sec / 60)).toFixed(2);
+      console.log(`[tel] W${i} repaths=${rep} (${rpm}/min) stuck=${stuck} idle=${idle}s walk=${walk}s work=${work}s flee=${flee}s`);
     }
   }
 
@@ -2821,6 +3258,7 @@ export default class GameScene extends Phaser.Scene {
       spawnLx: sx, spawnLy: sy, biteMs: 0, fleeMs: 0,
       circleAngle: 0, circleDir: 1, stateTimer: 0,
       lungeTargetX: 0, lungeTargetY: 0, huntTargetIdx: -1, spec,
+      stuckMs: 0, stuckCheckX: sx, stuckCheckY: sy,
     };
     this.animals.push(a);
     (window as unknown as { __testStag?: AnimalEntity }).__testStag = a;
@@ -2860,6 +3298,7 @@ export default class GameScene extends Phaser.Scene {
         circleAngle: angle, circleDir: i % 2 === 0 ? 1 : -1,
         stateTimer: 800 + i * 400,
         lungeTargetX: 0, lungeTargetY: 0, huntTargetIdx: -1, spec,
+        stuckMs: 0, stuckCheckX: sx, stuckCheckY: sy,
       };
       this.animals.push(minion);
     }
@@ -2874,7 +3313,14 @@ export default class GameScene extends Phaser.Scene {
     else if (s.type === 'huntAnimals') met = this.animalsKilled >= (s.target as number);
     else if (s.type === 'fishCaught') met = this.fishCaught >= (s.target as number);
     else if (s.type === 'cookedServed') met = this.cookedServed >= (s.target as number);
+    else if (s.type === 'planksProduced') met = this.planksProduced >= (s.target as number);
+    else if (s.type === 'planksStocked')  met = this.planksAvailable >= (s.target as number);
+    else if (s.type === 'supplyRunsCompleted') met = this.supplyRunsCompleted >= (s.target as number);
     if (met) {
+      // Diagnostic: fired-stage telemetry so the bot log shows exactly when
+      // and from which counter each stage advanced.
+      const t = (this.sceneTimeMs / 1000).toFixed(1);
+      console.log(`[stage] L${this.currentLevelNum} idx=${this.currentStageIdx} type=${s.type} target=${s.target} t=${t}s | rescued=${this.rescuedCount} tent=${this.tentBuilt} kills=${this.animalsKilled} cooked=${this.cookedServed} planks=${this.planksProduced} supplyRuns=${this.supplyRunsCompleted}`);
       this.currentStageIdx++;
       const banner = (getLang() === 'tr' && s.completedTextTr) ? s.completedTextTr : s.completedText;
       if (banner) {
@@ -2892,6 +3338,13 @@ export default class GameScene extends Phaser.Scene {
   // lx/ly are the character's current screen-space position.
   // Returns a reused scratch object (do not retain the reference).
   private projectVelocityFromWalls(velX: number, velY: number, lx: number, ly: number): { vx: number; vy: number } {
+    // Levels with no walls in cfg (e.g. open-map L6 fishing) must not be
+    // blocked by the legacy hardcoded camp rectangle. Skip the wall clamp
+    // and return the input velocity.
+    if (!cfg.walls || cfg.walls.length === 0) {
+      this._scratchVV.vx = velX; this._scratchVV.vy = velY;
+      return this._scratchVV;
+    }
     const ox = cfg.originX; const oy = cfg.originY;
     const HW = TILE_W / 2; const HH = TILE_H / 2;
     const BUF = 0.72;
@@ -2905,16 +3358,23 @@ export default class GameScene extends Phaser.Scene {
     const ix = ((lx - ox) / HW + (ly - oy) / HH) / 2;
     const iy = ((ly - oy) / HH - (lx - ox) / HW) / 2;
 
-    // North wall
-    if (iy <= 3 + BUF && viy < 0) viy = 0;
-    // South wall (gate opening ix 7–10 passes freely)
-    if (iy >= 12 - BUF && viy > 0) {
-      if (ix < GATE_MIN || ix > GATE_MAX) viy = 0;
-    }
-    // West wall
-    if (ix <= 3 + BUF && vix < 0) vix = 0;
-    // East wall
-    if (ix >= 13 - BUF && vix > 0) vix = 0;
+    // Walls clamp velocity only while the hero is within a narrow band of
+    // the wall line (not a half-plane). Half-plane logic broke the hero in
+    // the south area — any viy > 0 south of iy=12 was zeroed, so the hero
+    // drifted east instead of moving straight south to deep rescues.
+    const nearNorth = iy >= 3 - BUF && iy <= 3 + BUF;
+    const nearSouth = iy >= 12 - BUF && iy <= 12 + BUF;
+    const nearWest  = ix >= 3 - BUF && ix <= 3 + BUF;
+    const nearEast  = ix >= 13 - BUF && ix <= 13 + BUF;
+    const inYBand   = iy >= 3 && iy <= 12;
+    // North wall: hero approaching from inside (viy < 0) crossing iy=3.
+    if (nearNorth && viy < 0) viy = 0;
+    // South wall (gate opening ix 7–10 passes freely).
+    if (nearSouth && viy > 0 && (ix < GATE_MIN || ix > GATE_MAX)) viy = 0;
+    if (nearSouth && viy < 0 && (ix < GATE_MIN || ix > GATE_MAX)) viy = 0;
+    // East/West walls: only block when inside the camp's iy band.
+    if (inYBand && nearWest && vix < 0) vix = 0;
+    if (inYBand && nearEast && vix > 0) vix = 0;
 
     // Iso → screen velocity (reuse scratch)
     this._scratchVV.vx = (vix - viy) * HW;
@@ -2924,6 +3384,11 @@ export default class GameScene extends Phaser.Scene {
 
   // Returns a reused scratch object (do not retain the reference).
   private wallConstrain(prevSx: number, prevSy: number, newSx: number, newSy: number): { x: number; y: number } {
+    // No cfg walls → no hardcoded camp rectangle (L6 fishing open map).
+    if (!cfg.walls || cfg.walls.length === 0) {
+      this._scratchXY2.x = newSx; this._scratchXY2.y = newSy;
+      return this._scratchXY2;
+    }
     const ox = cfg.originX; const oy = cfg.originY;
     const HW = TILE_W / 2; const HH = TILE_H / 2;
     const GATE_MIN = 7.0; const GATE_MAX = 10.0;
@@ -2937,10 +3402,11 @@ export default class GameScene extends Phaser.Scene {
     let ix = ((newSx - ox) / HW + (newSy - oy) / HH) / 2;
     let iy = ((newSy - oy) / HH - (newSx - ox) / HW) / 2;
 
-    // North wall
+    // North wall (always blocks)
     if ((pIy >= 3) !== (iy >= 3)) iy = pIy >= 3 ? 3 + M : 3 - M;
 
-    // South wall (gate at ix 7–10)
+    // South wall (gate at ix 7–10) — blocks south→north and north→south
+    // outside the gate, in both directions.
     if ((pIy <= 12) !== (iy <= 12)) {
       if (ix >= GATE_MIN && ix <= GATE_MAX) {
         // Within gate opening — pass through freely
@@ -2957,10 +3423,11 @@ export default class GameScene extends Phaser.Scene {
       }
     }
 
-    // West wall
-    if ((pIx >= 3) !== (ix >= 3)) ix = pIx >= 3 ? 3 + M : 3 - M;
-    // East wall
-    if ((pIx <= 13) !== (ix <= 13)) ix = pIx <= 13 ? 13 - M : 13 + M;
+    // East/West walls — only block crossing when the hero is inside the iy
+    // band of the camp. Below iy=12 the hero roams freely for hunts/rescues.
+    const inYBand = (Math.min(pIy, iy) >= 3) && (Math.max(pIy, iy) <= 12);
+    if (inYBand && (pIx >= 3) !== (ix >= 3)) ix = pIx >= 3 ? 3 + M : 3 - M;
+    if (inYBand && (pIx <= 13) !== (ix <= 13)) ix = pIx <= 13 ? 13 - M : 13 + M;
 
     this._scratchXY2.x = ox + (ix - iy) * HW;
     this._scratchXY2.y = oy + (ix + iy) * HH;

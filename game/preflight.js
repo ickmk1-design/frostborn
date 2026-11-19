@@ -602,6 +602,182 @@ async function testDecorOverlap() {
   }
 }
 
+// ── Level reachability (nav-grid port) ───────────────────────────────────────
+// Rebuilds the NavGrid offline from each level JSON and asserts every station,
+// frozen survivor, build pad, and tree is reachable from the fire. FAILS with
+// the iso coordinates on break so a level breaks the preflight immediately.
+const TILE_W_PF = 80; const TILE_H_PF = 40;
+function isoToScreenPF(ix, iy, ox, oy) {
+  return { x: ox + (ix - iy) * TILE_W_PF / 2, y: oy + (ix + iy) * TILE_H_PF / 2 };
+}
+class PFGrid {
+  constructor() { this.cell = 24; }
+  build(cfg) {
+    this.ox = cfg.originX; this.oy = cfg.originY;
+    const obstacles = [];
+    const fp = isoToScreenPF(cfg.fire.iso[0], cfg.fire.iso[1], this.ox, this.oy);
+    obstacles.push({ x: fp.x, y: fp.y, r: 62 });
+    for (const t of (cfg.trees ?? [])) {
+      const p = isoToScreenPF(t.iso[0], t.iso[1], this.ox, this.oy);
+      obstacles.push({ x: p.x, y: p.y, r: 12 });
+    }
+    for (const s of (cfg.stations ?? [])) {
+      const p = isoToScreenPF(s.iso[0], s.iso[1], this.ox, this.oy);
+      obstacles.push({ x: p.x, y: p.y, r: 14 });
+    }
+    // Compute bounds from all iso references + pad
+    const allIso = [
+      ...((cfg.walls ?? [])),
+      ...((cfg.trees ?? []).map(t => t.iso)),
+      ...((cfg.frozenSurvivors ?? []).map(s => s.iso)),
+      cfg.fire.iso,
+      ...((cfg.buildPads ?? []).map(p => p.iso)),
+      ...((cfg.stations ?? []).map(s => s.iso)),
+      ...((cfg.decor ?? []).map(d => d.iso)),
+    ];
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const [ix, iy] of allIso) {
+      const p = isoToScreenPF(ix, iy, this.ox, this.oy);
+      if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
+    }
+    const NAV_PAD = 200;
+    this.minX = minX - NAV_PAD; this.minY = minY - NAV_PAD;
+    this.maxX = maxX + NAV_PAD; this.maxY = maxY + NAV_PAD;
+    this.cols = Math.ceil((this.maxX - this.minX) / this.cell);
+    this.rows = Math.ceil((this.maxY - this.minY) / this.cell);
+    this.blocked = new Uint8Array(this.cols * this.rows);
+    // Mark circles
+    for (const o of obstacles) {
+      const c0 = this._cell(o.x - o.r, o.y - o.r);
+      const c1 = this._cell(o.x + o.r, o.y + o.r);
+      const r2 = o.r * o.r;
+      for (let r = c0.r; r <= c1.r; r++) {
+        if (r < 0 || r >= this.rows) continue;
+        for (let c = c0.c; c <= c1.c; c++) {
+          if (c < 0 || c >= this.cols) continue;
+          const cx = this.minX + (c + 0.5) * this.cell;
+          const cy = this.minY + (r + 0.5) * this.cell;
+          const dx = cx - o.x; const dy = cy - o.y;
+          if (dx*dx + dy*dy <= r2) this.blocked[r * this.cols + c] = 1;
+        }
+      }
+    }
+    // Walls (minus gate)
+    const gateSet = new Set();
+    for (const [gx, gy] of (cfg.gate ?? [])) gateSet.add(`${gx},${gy}`);
+    const HW = TILE_W_PF / 2; const HH = TILE_H_PF / 2;
+    for (const [wx, wy] of (cfg.walls ?? [])) {
+      if (gateSet.has(`${wx},${wy}`)) continue;
+      const p = isoToScreenPF(wx, wy, this.ox, this.oy);
+      const x0 = p.x - HW + 4; const y0 = p.y - HH + 2;
+      const x1 = p.x + HW - 4; const y1 = p.y + HH - 2;
+      const c0 = this._cell(x0, y0); const c1 = this._cell(x1, y1);
+      for (let r = c0.r; r <= c1.r; r++) {
+        if (r < 0 || r >= this.rows) continue;
+        for (let c = c0.c; c <= c1.c; c++) {
+          if (c < 0 || c >= this.cols) continue;
+          this.blocked[r * this.cols + c] = 1;
+        }
+      }
+    }
+    // Gate always open
+    for (const [gx, gy] of (cfg.gate ?? [])) {
+      const p = isoToScreenPF(gx, gy, this.ox, this.oy);
+      const cell = this._cell(p.x, p.y);
+      for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+        const r = cell.r + dr; const c = cell.c + dc;
+        if (r < 0 || r >= this.rows || c < 0 || c >= this.cols) continue;
+        this.blocked[r * this.cols + c] = 0;
+      }
+    }
+  }
+  _cell(x, y) {
+    return { c: Math.floor((x - this.minX) / this.cell), r: Math.floor((y - this.minY) / this.cell) };
+  }
+  _nearestOpen(x, y, maxRings = 10) {
+    const c0 = Math.floor((x - this.minX) / this.cell);
+    const r0 = Math.floor((y - this.minY) / this.cell);
+    for (let ring = 0; ring <= maxRings; ring++) {
+      for (let dr = -ring; dr <= ring; dr++) {
+        for (let dc = -ring; dc <= ring; dc++) {
+          if (ring > 0 && Math.max(Math.abs(dr), Math.abs(dc)) !== ring) continue;
+          const r = r0 + dr; const c = c0 + dc;
+          if (r < 0 || r >= this.rows || c < 0 || c >= this.cols) continue;
+          if (!this.blocked[r * this.cols + c]) return { r, c };
+        }
+      }
+    }
+    return null;
+  }
+  // BFS reachability — enough for yes/no (don't need actual A* path).
+  isReachable(fromX, fromY, toX, toY) {
+    const s = this._nearestOpen(fromX, fromY);
+    const g = this._nearestOpen(toX, toY);
+    if (!s || !g) return false;
+    if (s.r === g.r && s.c === g.c) return true;
+    const visited = new Uint8Array(this.cols * this.rows);
+    const q = [s.r * this.cols + s.c];
+    visited[q[0]] = 1;
+    const DIRS = [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[-1,1],[1,-1],[1,1]];
+    const gIdx = g.r * this.cols + g.c;
+    let head = 0;
+    while (head < q.length) {
+      const cur = q[head++];
+      if (cur === gIdx) return true;
+      const cr = Math.floor(cur / this.cols); const cc = cur % this.cols;
+      for (const [dr, dc] of DIRS) {
+        const nr = cr + dr; const nc = cc + dc;
+        if (nr < 0 || nr >= this.rows || nc < 0 || nc >= this.cols) continue;
+        if (this.blocked[nr * this.cols + nc]) continue;
+        if (dr !== 0 && dc !== 0) {
+          if (this.blocked[cr * this.cols + nc] || this.blocked[nr * this.cols + cc]) continue;
+        }
+        const nIdx = nr * this.cols + nc;
+        if (visited[nIdx]) continue;
+        visited[nIdx] = 1; q.push(nIdx);
+      }
+    }
+    return false;
+  }
+}
+
+async function testLevelReachability() {
+  console.log('\n--- Level Reachability (NavGrid) ---');
+  const fsR = require('fs'); const pathR = require('path');
+  const levelsDir = pathR.join(__dirname, 'src', 'levels');
+  const files = fsR.readdirSync(levelsDir).filter(f => /^level\d+\.json$/.test(f)).sort();
+  let totalFails = 0;
+  for (const lf of files) {
+    const cfg = JSON.parse(fsR.readFileSync(pathR.join(levelsDir, lf), 'utf8'));
+    const g = new PFGrid(); g.build(cfg);
+    const fp = isoToScreenPF(cfg.fire.iso[0], cfg.fire.iso[1], cfg.originX, cfg.originY);
+    const check = (iso, label) => {
+      const p = isoToScreenPF(iso[0], iso[1], cfg.originX, cfg.originY);
+      if (!g.isReachable(fp.x, fp.y, p.x, p.y)) {
+        fail(`[${lf}] Unreachable from fire: ${label} iso=[${iso}]`);
+        totalFails++; return false;
+      }
+      return true;
+    };
+    let ok = true;
+    for (const s of (cfg.stations ?? [])) {
+      if (!check(s.iso, `station(${s.id ?? s.kind})`)) ok = false;
+    }
+    for (const sv of (cfg.frozenSurvivors ?? [])) {
+      if (!check(sv.iso, 'frozenSurvivor')) ok = false;
+    }
+    for (const bp of (cfg.buildPads ?? [])) {
+      if (!check(bp.iso, `buildPad(${bp.id})`)) ok = false;
+    }
+    for (const t of (cfg.trees ?? [])) {
+      if (!check(t.iso, 'tree')) ok = false;
+    }
+    if (ok) pass(`[${lf}] All stations/survivors/pads/trees reachable from fire`);
+  }
+  if (totalFails === 0) console.log('  (0 unreachable targets across all levels)');
+}
+
 // ── Wolf / Deer Direction Facing ──────────────────────────────────────────────
 // Uses the __testAnimalDir helper exposed by GameScene (exposed from TypeScript side).
 // Verifies that wolfDir() maps each of 8 screen movement velocities to the expected
@@ -872,6 +1048,9 @@ async function testWorkerDelivery(browser, label) {
 
     // ── 9. Decor/tree overlap check ──
     await testDecorOverlap();
+
+    // ── 9b. Level reachability (NavGrid) ──
+    await testLevelReachability();
 
     // ── 10. Animal direction facing ──
     if (wkOk) await testAnimalDirections(wk, 'WebKit');
