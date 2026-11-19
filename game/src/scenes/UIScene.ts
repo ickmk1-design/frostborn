@@ -39,8 +39,10 @@ export default class UIScene extends Phaser.Scene {
   private survivorIcons: Phaser.GameObjects.Graphics[] = [];
   private survivorCountText!: Phaser.GameObjects.Text;
 
-  // Overlay buttons
-  private refuelBtn!:   Phaser.GameObjects.Text;
+  // Overlay buttons — refuel is now a wooden pill with gauge icon + label.
+  private refuelBtn!:   Phaser.GameObjects.Container;
+  private refuelLabel!: Phaser.GameObjects.Text;
+  private refuelLoading = false;
 
   // Toast
   private toastGfx!: Phaser.GameObjects.Graphics;
@@ -54,6 +56,16 @@ export default class UIScene extends Phaser.Scene {
   private buildBannerText!: Phaser.GameObjects.Text;
   private hintTextObj!:     Phaser.GameObjects.Text;
   private fpsText!:         Phaser.GameObjects.Text;
+
+  // Objective pill (compact banner shown after the full banner collapses).
+  private objPillBg!:   Phaser.GameObjects.Graphics;
+  private objPillText!: Phaser.GameObjects.Text;
+  private bannerFullMs = 0;        // ms left on the full banner before it collapses
+  private lastStageSignature = ''; // cheap "stage changed" detector
+
+  // Coin flash (yellow bounce when coins increase).
+  private lastCoins = 0;
+  private coinFlashMs = 0;
 
   // Level badge + start banner
   private levelBadge!: Phaser.GameObjects.Text;
@@ -229,30 +241,75 @@ export default class UIScene extends Phaser.Scene {
     // ── 14. Joystick graphics ─────────────────────────────────────────────
     this.joyGfx = this.add.graphics().setDepth(13);
 
-    // ── 15. "Watch Ad — Refuel" overlay (hidden until freeze starts) ──────
-    this.refuelBtn = this.add.text(CX, H - 48, t('watchAdRefuel'), {
-      fontFamily: FF, fontSize: '17px', color: '#88ffdd',
-      backgroundColor: '#001a14', padding: { x: 18, y: 10 },
-      stroke: '#005544', strokeThickness: 1,
-    }).setOrigin(0.5, 1).setDepth(20).setVisible(false).setInteractive({ useHandCursor: true });
+    // ── 15. "Watch Ad — Refuel" wooden pill (hidden until fuel < 35%) ─────
+    // agentB round2 — restyled from the old plain text button to a round
+    // wooden pill with a small fuel-gauge icon, visually consistent with the
+    // pause button. Shown only when fuel is actually low (<35%), not just
+    // during freeze. Width is dynamic (label + icon + padding).
+    {
+      const btnLabel = t('watchAdRefuel');
+      const btnFontSize = 15;
+      const iconR = 10;
+      const padX = 14;
+      // Build inside a container so we can show/hide the whole thing cheaply.
+      this.refuelBtn = this.add.container(CX, H - 56).setDepth(20).setVisible(false);
+      // Measure label width with a hidden probe to get the right pill width.
+      const probe = this.add.text(0, 0, btnLabel, {
+        fontFamily: FF, fontSize: `${btnFontSize}px`,
+      }).setVisible(false);
+      const textW = probe.width;
+      probe.destroy();
+      const pillW = textW + iconR * 2 + padX * 3 + 10;
+      const pillH = 44;
 
-    this.refuelBtn.on('pointerdown', () => {
-      this.refuelBtn.disableInteractive().setText('Loading...');
-      showRewarded(
-        () => {
-          this.scene.get('GameScene').events.emit('fuel-refill');
-          this.refuelBtn.setVisible(false).setText('Watch Ad — Refuel');
-        },
-        () => {
-          this.showToast(t('adNotAvailable'));
-          this.refuelBtn.setText('Watch Ad — Refuel').setInteractive({ useHandCursor: true });
-        },
-        () => {
-          this.showToast(t('adsAppOnly'));
-          this.refuelBtn.setText('Watch Ad — Refuel').setInteractive({ useHandCursor: true });
-        },
-      );
-    });
+      const pillBg = this.add.graphics();
+      pillBg.fillStyle(0x5c3010, 0.95).fillRoundedRect(-pillW / 2, -pillH / 2, pillW, pillH, pillH / 2);
+      pillBg.lineStyle(2.5, 0xd48030, 1).strokeRoundedRect(-pillW / 2, -pillH / 2, pillW, pillH, pillH / 2);
+      pillBg.lineStyle(1, 0xffdda0, 0.3).strokeRoundedRect(-pillW / 2 + 3, -pillH / 2 + 3, pillW - 6, pillH - 6, pillH / 2 - 3);
+
+      // Simple fuel-flame icon drawn with Graphics (no texture needed).
+      const icon = this.add.graphics();
+      const ix = -pillW / 2 + padX + iconR;
+      icon.fillStyle(0xff8a3a, 1).fillCircle(ix, 1, iconR);        // outer flame
+      icon.fillStyle(0xffd680, 1).fillCircle(ix, 1, iconR * 0.6);   // inner glow
+      icon.fillStyle(0xfff6c0, 1).fillCircle(ix, -1, iconR * 0.28); // highlight
+
+      this.refuelLabel = this.add.text(ix + iconR + 6, 0, btnLabel, {
+        fontFamily: FF, fontSize: `${btnFontSize}px`,
+        color: '#ffe8b0', stroke: '#2a1200', strokeThickness: 3,
+      }).setOrigin(0, 0.5);
+
+      const hit = this.add.rectangle(0, 0, pillW + 16, pillH + 16, 0, 0)
+        .setInteractive({ useHandCursor: true });
+
+      this.refuelBtn.add([pillBg, icon, this.refuelLabel, hit]);
+      hit.on('pointerdown', () => this.tweens.add({ targets: this.refuelBtn, scaleX: 0.92, scaleY: 0.92, duration: 60 }));
+      hit.on('pointerup', () => {
+        this.tweens.add({ targets: this.refuelBtn, scaleX: 1, scaleY: 1, duration: 100, ease: 'Back.Out' });
+        if (this.refuelLoading) return;
+        this.refuelLoading = true;
+        this.refuelLabel.setText('Loading...');
+        showRewarded(
+          () => {
+            this.scene.get('GameScene').events.emit('fuel-refill');
+            this.refuelBtn.setVisible(false);
+            this.refuelLabel.setText(btnLabel);
+            this.refuelLoading = false;
+          },
+          () => {
+            this.showToast(t('adNotAvailable'));
+            this.refuelLabel.setText(btnLabel);
+            this.refuelLoading = false;
+          },
+          () => {
+            this.showToast(t('adsAppOnly'));
+            this.refuelLabel.setText(btnLabel);
+            this.refuelLoading = false;
+          },
+        );
+      });
+      hit.on('pointerout', () => this.tweens.add({ targets: this.refuelBtn, scaleX: 1, scaleY: 1, duration: 80 }));
+    }
 
     // ── 16. Toast system (replaces persistent coinShopBtn) ────────────────
     this.toastGfx = this.add.graphics().setDepth(20).setAlpha(0);
@@ -268,14 +325,24 @@ export default class UIScene extends Phaser.Scene {
       gs.scene.start('ShopScene', { from: 'LevelSelectScene' });
     });
 
-    // ── 17. Level badge (right-side, below the pause button, clear of banner) ─
-    // Pause button lives inside the HUD at CTR_Y with radius 18. The goal/build
-    // banner is centred below the HUD (BANNER_Y → BANNER_Y + ~24px). Place the
-    // badge below both so it never clips the banner's rounded corner.
-    this.levelBadge = this.add.text(W - 10, SAF + BAR_H + 36, '', {
-      fontFamily: FF, fontSize: '11px', color: '#aabbcc',
-      stroke: '#000', strokeThickness: 2,
-    }).setOrigin(1, 0).setAlpha(0.7).setDepth(13);
+    // ── 17. Level badge — part of the top bar so it always sits ABOVE the
+    // gameplay (was 11px, alpha 0.7, which overlapped fence sprites in some
+    // levels). agentB round2: promoted to 22px gold text matching the coin
+    // counter, pinned inside the HUD bar above the pause button.
+    this.levelBadge = this.add.text(W - 54, CTR_Y, '', {
+      fontFamily: FF, fontSize: '22px', color: '#ffd700',
+      stroke: '#000', strokeThickness: 3,
+    }).setOrigin(1, 0.5).setAlpha(1).setDepth(12);
+
+    // ── 17b. Compact objective pill (top-right, under the HUD bar).
+    // Shows `🪵 6/6` style compact progress once the full banner collapses.
+    // agentB round2 — stays hidden until the first stage advance arrives.
+    const pillY = SAF + BAR_H + 10;
+    this.objPillBg = this.add.graphics().setDepth(13).setAlpha(0);
+    this.objPillText = this.add.text(W - 12, pillY + 2, '', {
+      fontFamily: FF, fontSize: '15px', color: '#ffe8b0',
+      stroke: '#2a1200', strokeThickness: 3,
+    }).setOrigin(1, 0).setAlpha(0).setDepth(14);
 
     // ── 18. Level start banner (shown for 2s at scene launch) ─────────────
     this.levelStartBanner = this.add.text(CX, CY - 60, '', {
@@ -421,8 +488,31 @@ export default class UIScene extends Phaser.Scene {
     }
   }
 
+  // agentB round2 — collapse the verbose objective banner into a compact
+  // pill with an emoji + the first "X/Y" fraction we can find in the text.
+  // Falls back to a short truncated string if no counter is present.
+  private compactObjective(txt: string): string {
+    if (!txt) return '';
+    const frac = txt.match(/(\d+)\s*\/\s*(\d+)/);
+    const lower = txt.toLowerCase();
+    let icon = '';
+    if (/odun|log|wood|kütük|k\u00fct\u00fck/i.test(txt)) icon = '🪵';
+    else if (/bal[ıi]k|fish/i.test(txt)) icon = '🐟';
+    else if (/et|meat/i.test(txt)) icon = '🥩';
+    else if (/yemek|cook|pişir|pi\u015fir/i.test(lower)) icon = '🍲';
+    else if (/plank|tahta/i.test(txt)) icon = '🪵';
+    else if (/kurt|wolf/i.test(txt)) icon = '🐺';
+    else if (/çad[ıi]r|tent|çad\u0131r/i.test(txt)) icon = '⛺';
+    else if (/kule|watchtower/i.test(lower)) icon = '🏹';
+    else icon = '🎯';
+    if (frac) return `${icon} ${frac[1]}/${frac[2]}`;
+    const shortened = txt.length > 22 ? txt.slice(0, 20) + '…' : txt;
+    return `${icon} ${shortened}`;
+  }
+
   private onHudUpdate(data: HudUpdateData): void {
     const SAF   = Math.max(44, this.safeTop + 4);
+    const dtMs  = this.game.loop.delta;
 
     // Fuel fill
     this.fuelFill.clear();
@@ -437,18 +527,62 @@ export default class UIScene extends Phaser.Scene {
         .fillRoundedRect(50, SAF + 22, 110 * data.freezePct, 10, 3);
     }
 
-    // Coin
+    // Coin — flash yellow + bounce when it increases so wins are legible.
+    // agentB round2 verification hook (task #9): if `[chain]` telemetry
+    // reports a delivery but this flash never fires, the UIScene refresh is
+    // broken, not the GameScene coin increment.
+    if (data.coins > this.lastCoins) {
+      this.coinFlashMs = 420;
+      this.tweens.add({
+        targets: this.coinText, scaleX: 1.22, scaleY: 1.22, duration: 120, yoyo: true, ease: 'Sine.InOut',
+      });
+    }
+    this.lastCoins = data.coins;
+    if (this.coinFlashMs > 0) {
+      this.coinFlashMs = Math.max(0, this.coinFlashMs - dtMs);
+      this.coinText.setColor(this.coinFlashMs > 0 ? '#ffff55' : '#ffd700');
+    }
     this.coinText.setText(String(data.coins));
 
     // Survivor icons / count
     this.drawSurvivorIcons(data.survivors, data.survivorGoal);
 
-    // Banner
+    // Banner — full banner shows for 3s on each stage change, then collapses
+    // to a compact pill at the top-right with just icon + target.
+    // agentB round2: banner collapse feature (task #6).
+    const sig = data.goalText;
+    if (sig !== this.lastStageSignature && sig.length > 0) {
+      this.lastStageSignature = sig;
+      this.bannerFullMs = 3000;
+    }
+    if (this.bannerFullMs > 0) this.bannerFullMs = Math.max(0, this.bannerFullMs - dtMs);
     this.buildBannerText.setText(data.goalText);
-    this.buildBannerText.setAlpha(data.bannerAlpha);
+    const fullVisible = this.bannerFullMs > 0 || data.bannerAlpha > 0.95; // keep for stage-change ping
+    this.buildBannerText.setAlpha(fullVisible ? Math.min(1, data.bannerAlpha) : 0);
+    // Compact pill
+    const pillLabel = this.compactObjective(data.goalText);
+    if (pillLabel && !fullVisible) {
+      this.objPillText.setText(pillLabel).setAlpha(1);
+      // Size + draw pill bg
+      const padX = 10; const padY = 6;
+      const w = this.objPillText.width + padX * 2;
+      const h = this.objPillText.height + padY * 2;
+      const x = this.scale.width - 12 - w;
+      const y = SAF + 60 + 6; // just under HUD bar
+      this.objPillBg.clear()
+        .fillStyle(0x0a0f1e, 0.78).fillRoundedRect(x, y, w, h, 10)
+        .lineStyle(1.5, 0xd48030, 0.8).strokeRoundedRect(x, y, w, h, 10)
+        .setAlpha(1);
+      this.objPillText.setPosition(x + w - padX, y + padY);
+    } else {
+      this.objPillBg.clear().setAlpha(0);
+      this.objPillText.setAlpha(0);
+    }
 
-    // Refuel overlay
-    this.refuelBtn.setVisible(data.showFreeze && !this.refuelBtn.text.startsWith('Loading'));
+    // Refuel overlay — show ONLY when fuel < 35% OR during active freeze
+    // countdown (agentB round2 task #8). Previously shown on freeze only.
+    const showRefuel = (data.fuelPct < 0.35 || data.showFreeze) && !this.refuelLoading;
+    this.refuelBtn.setVisible(showRefuel || this.refuelLoading);
 
     // Coin shop toast
     if (data.showCoinShop) {
