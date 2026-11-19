@@ -288,9 +288,15 @@ async function readState(page) {
       playerHpMax:     sc.playerHpMax   ?? 10,
       playerLastDir:   sc.playerLastDir ?? 0,
       carriedLogs:     sc.carriedLogs   ?? 0,
+      carriedMeat:     sc.carriedMeat   ?? 0,
       goalStages:      (sc.goalStages   ?? []).map(s => ({ type: s.type, target: s.target })),
       currentStageIdx: sc.currentStageIdx ?? 0,
       animalsKilled:   sc.animalsKilled ?? 0,
+      cookedServed:    sc.cookedServed  ?? 0,
+      planksProduced:  sc.planksProduced ?? 0,
+      planksAvailable: sc.planksAvailable ?? 0,
+      supplyRunsCompleted: sc.supplyRunsCompleted ?? 0,
+      fishCaught:      sc.fishCaught    ?? 0,
       fireX:           sc.fireX         ?? 0,
       fireY:           sc.fireY         ?? 0,
       padX:            sc.padX          ?? 0,
@@ -299,8 +305,17 @@ async function readState(page) {
       survivors: (sc.survivors ?? []).map(s => ({
         state: s.state, lx: s.lx, ly: s.ly, stuckMs: s.stuckMs ?? 0,
       })),
-      animals: (sc.animals ?? []).map(a => ({
-        state: a.state, lx: a.lx, ly: a.ly, hp: a.hp, huntTargetIdx: a.huntTargetIdx ?? -1,
+      animals: (sc.animals ?? []).map((a, idx) => ({
+        idx,
+        state: a.state, lx: a.lx, ly: a.ly, hp: a.hp, maxHp: a.maxHp ?? a.hp,
+        huntTargetIdx: a.huntTargetIdx ?? -1,
+        atlasKey: a.atlasKey ?? '',
+        aggroRange: a.spec?.aggroRange ?? 0,
+        attackRange: a.spec?.attackRange ?? 0,
+      })),
+      meatDrops: (sc.meatDrops ?? []).map(m => ({
+        lx: m.lx, ly: m.ly,
+        alpha: m.sprite?.alpha ?? 1,
       })),
       workers: (sc.survivors ?? []).filter(s => s.state === 'worker').map((s, i) => ({
         idx: i, workerState: s.workerState, lx: s.lx, ly: s.ly,
@@ -381,6 +396,37 @@ class Bot {
 
     // Hysteresis: track whether we need to top up fuel between stages
     this.needsTopUp = false;
+
+    // ── Hunt tracker ────────────────────────────────────────────────────────
+    // Keyed by animal index; records hp seen on previous dwell. 3 consecutive
+    // dwells with no HP decrement → skip this animal.
+    this.huntState = {
+      currentIdx:       -1,
+      lastHp:           -1,
+      noProgressDwells: 0,
+      postKillLoiterMs: 0,
+      postKillTarget:   null,
+    };
+
+    // ── Rescue blacklist ────────────────────────────────────────────────────
+    // Survivors (by iso-ish key) that failed to make progress for 20s on the
+    // current stage. Reset on new stage / new level.
+    this.rescueBlacklist = new Set();
+    this.rescueTargetKey = '';
+    this.rescueTargetT0  = Date.now();
+    this.rescueTargetLastHp = -1;
+    this.rescueTargetLastRescued = 0;
+
+    // ── 30s no-progress hard cap ────────────────────────────────────────────
+    // Tracks the last time ANY of these counters moved: rescued, animalsKilled,
+    // cooked, planks, supplyRuns, hero drift >60px. If 30s pass with no
+    // movement → force a task switch and emit [botstall]. INFO [botstall] line
+    // also emitted every 15s even before the 30s cutoff.
+    this.progressT0 = Date.now();
+    this.progressSnapshot = null;
+    this.lastBotstallLogMs = 0;
+    this.lastForcedSwitchMs = 0;
+    this.forceAltStageUntil = 0;   // when > now, pick fallback task in main loop
 
     // Result
     this.won           = false;
@@ -564,7 +610,6 @@ class Bot {
     }
 
     // Pick nearest frozen survivor from live state; fall back to static positions
-    let target = null;
     const frozen = state.survivors.filter(s => s.state === 'frozen' || s.state === 'thawing');
     // All remaining survivors are already thawed (following) — return to fire and wait for them.
     const following = state.survivors.filter(s => s.state === 'following');
@@ -574,21 +619,62 @@ class Bot {
       await this.page.waitForTimeout(1200);
       return;
     }
+    // Build candidate list (frozen survivors) with a stable key, filtered by
+    // blacklist. Sort by distance ascending.
+    const candidates = [];
     if (frozen.length > 0) {
-      let bd = Infinity;
       for (const sv of frozen) {
-        const d = dist(state.playerLX, state.playerLY, sv.lx, sv.ly);
-        if (d < bd) { bd = d; target = { x: sv.lx, y: sv.ly }; }
+        const key = `${Math.round(sv.lx / 24)},${Math.round(sv.ly / 24)}`;
+        if (this.rescueBlacklist.has(key)) continue;
+        candidates.push({ key, x: sv.lx, y: sv.ly, state: sv.state });
+      }
+      // All blacklisted — clear and retry (second-nearest gets a fresh chance next)
+      if (candidates.length === 0) {
+        this.rescueBlacklist.clear();
+        for (const sv of frozen) {
+          const key = `${Math.round(sv.lx / 24)},${Math.round(sv.ly / 24)}`;
+          candidates.push({ key, x: sv.lx, y: sv.ly, state: sv.state });
+        }
       }
     } else if (this.survPoses.length > 0) {
-      let bd = Infinity;
-      for (const sp of this.survPoses) {
-        const d = dist(state.playerLX, state.playerLY, sp.x, sp.y);
-        if (d < bd) { bd = d; target = sp; }
+      for (let i = 0; i < this.survPoses.length; i++) {
+        const sp = this.survPoses[i];
+        const key = `static${i}`;
+        if (this.rescueBlacklist.has(key)) continue;
+        candidates.push({ key, x: sp.x, y: sp.y, state: 'frozen' });
       }
     }
 
-    if (!target) return;
+    if (candidates.length === 0) return;
+
+    candidates.sort((a, b) =>
+      dist(state.playerLX, state.playerLY, a.x, a.y) -
+      dist(state.playerLX, state.playerLY, b.x, b.y),
+    );
+    const target = candidates[0];
+
+    // ── Per-target stall watchdog: if we've been focused on the same survivor
+    // for ≥ 20 s and rescuedCount hasn't advanced, blacklist it and try the
+    // next-nearest on the next tick.
+    if (this.rescueTargetKey !== target.key) {
+      this.rescueTargetKey = target.key;
+      this.rescueTargetT0 = Date.now();
+      this.rescueTargetLastRescued = state.rescuedCount;
+    } else {
+      if (state.rescuedCount > this.rescueTargetLastRescued) {
+        // Progress — reset
+        this.rescueTargetT0 = Date.now();
+        this.rescueTargetLastRescued = state.rescuedCount;
+      } else if (Date.now() - this.rescueTargetT0 > 20000) {
+        this.rescueBlacklist.add(target.key);
+        this.issue('MINOR', `Rescue target ${target.key} unreachable (20s no progress) — blacklisted`);
+        this.rescueTargetKey = '';
+        this.rescueTargetT0  = Date.now();
+        this.navPrevX = -9999; this.navPrevY = -9999;
+        this._path = null;
+        return;
+      }
+    }
 
     const d = dist(state.playerLX, state.playerLY, target.x, target.y);
     if (d > 70) {
@@ -651,35 +737,115 @@ class Bot {
       return;
     }
 
-    // Pick nearest live animal
-    const live = state.animals.filter(a => a.state !== 'dead');
-    let target = null, bd = Infinity;
+    const hs = this.huntState;
 
-    if (live.length > 0) {
-      for (const a of live) {
-        const d = dist(state.playerLX, state.playerLY, a.lx, a.ly);
-        if (d < bd) { bd = d; target = { x: a.lx, y: a.ly }; }
+    // ── Post-kill loiter: walk to meat drop(s) and dwell for auto-pickup ────
+    if (hs.postKillLoiterMs > 0 && hs.postKillTarget) {
+      // Prefer the real meat drop list — pick the nearest meat sprite that's
+      // still alive. If nothing in the list, fall back to the stored kill pos.
+      let mt = hs.postKillTarget;
+      if (state.meatDrops && state.meatDrops.length > 0) {
+        let bd = Infinity;
+        for (const md of state.meatDrops) {
+          if (md.alpha <= 0.05) continue;
+          const d = dist(state.playerLX, state.playerLY, md.lx, md.ly);
+          if (d < bd) { bd = d; mt = { x: md.lx, y: md.ly }; }
+        }
       }
-    } else if (this.animPoses.length > 0) {
-      for (const ap of this.animPoses) {
-        const d = dist(state.playerLX, state.playerLY, ap.x, ap.y);
-        if (d < bd) { bd = d; target = ap; }
+      const d = dist(state.playerLX, state.playerLY, mt.x, mt.y);
+      if (d > 50) {
+        await this.navigateTo(state, mt.x, mt.y, Math.min(1500, d * 8));
+      } else {
+        await this.page.waitForTimeout(250);
+        hs.postKillLoiterMs -= 250;
+      }
+      if (hs.postKillLoiterMs <= 0) { hs.postKillTarget = null; }
+      return;
+    }
+
+    // ── Pick target ─────────────────────────────────────────────────────────
+    const live = state.animals.filter(a => a.state !== 'dead');
+    if (live.length === 0) {
+      // No live animals — should not normally happen mid-stage. Idle briefly.
+      await this.page.waitForTimeout(400);
+      return;
+    }
+
+    // Keep the current target if it's still alive and within range; otherwise
+    // pick the nearest live one. Skip animals this hunt gave up on.
+    let target = null;
+    if (hs.currentIdx >= 0) {
+      const t = live.find(a => a.idx === hs.currentIdx);
+      if (t) {
+        const dSelf = dist(state.playerLX, state.playerLY, t.lx, t.ly);
+        // Give up if it fled > 400 px away (will lock to nearest below).
+        if (dSelf < 400 && hs.noProgressDwells < 3) target = t;
+      }
+    }
+    if (!target) {
+      let bd = Infinity;
+      for (const a of live) {
+        if (hs.currentIdx === a.idx && hs.noProgressDwells >= 3) continue;
+        const d = dist(state.playerLX, state.playerLY, a.lx, a.ly);
+        if (d < bd) { bd = d; target = a; }
+      }
+      // All in blacklist? Clear and retry any.
+      if (!target) {
+        hs.currentIdx = -1; hs.noProgressDwells = 0; hs.lastHp = -1;
+        for (const a of live) {
+          const d = dist(state.playerLX, state.playerLY, a.lx, a.ly);
+          if (d < bd) { bd = d; target = a; }
+        }
+      }
+      if (target) {
+        hs.currentIdx = target.idx;
+        hs.lastHp = target.hp;
+        hs.noProgressDwells = 0;
       }
     }
 
     if (!target) {
-      await this.page.waitForTimeout(500);
+      await this.page.waitForTimeout(400);
       return;
     }
 
-    const d = dist(state.playerLX, state.playerLY, target.x, target.y);
-    if (d > 65) {
-      await this.navigateTo(state, target.x, target.y, Math.min(2000, d * 8));
-    } else {
-      // Near animal — keep pressing toward it (attack)
-      await walkTo(this.page, state, target.x, target.y, 500);
-      await this.page.waitForTimeout(150);
+    // Predict next position: iso roam animals move ≈ 50 px/s; project 0.3 s.
+    // This keeps navigateTo targeting the animal's ~future cell so the hero
+    // meets it instead of chasing stale coords.
+    const px = state.playerLX, py = state.playerLY;
+    const d = dist(px, py, target.lx, target.ly);
+    const HIT = 70;  // matches effRange floor in GameScene.ts
+    if (d > HIT) {
+      // Lead a bit toward the animal's roam center (we don't have velocity
+      // in-state — but we can predict small drift by biasing toward the animal
+      // and overshooting by ~20 px so we close the gap).
+      const ang = angle(px, py, target.lx, target.ly);
+      const leadX = target.lx + Math.cos(ang) * 20;
+      const leadY = target.ly + Math.sin(ang) * 20;
+      await this.navigateTo(state, leadX, leadY, Math.min(1500, d * 8));
+      return;
     }
+
+    // In hit range — stop driving so hero auto-attack can connect. Dwell
+    // 400 ms, then re-read HP. If HP didn't drop over the last dwell AND we
+    // weren't repositioning, count a no-progress dwell.
+    await this.page.waitForTimeout(450);
+    const after = await readState(this.page);
+    if (!after) return;
+    const live2 = after.animals.find(a => a.idx === target.idx);
+    if (!live2 || live2.state === 'dead') {
+      // Kill confirmed — set up post-kill loiter at the drop position.
+      hs.postKillTarget = { x: target.lx, y: target.ly };
+      hs.postKillLoiterMs = 1200;
+      hs.currentIdx = -1; hs.lastHp = -1; hs.noProgressDwells = 0;
+      return;
+    }
+    if (hs.lastHp >= 0 && live2.hp < hs.lastHp) {
+      hs.noProgressDwells = 0;
+    } else {
+      hs.noProgressDwells++;
+    }
+    hs.lastHp = live2.hp;
     // Fire tending is handled by the main-loop hysteresis — no in-task interrupt.
   }
 
@@ -710,7 +876,8 @@ class Bot {
   diagnoseStall(state, stage) {
     const px = state.playerLX, py = state.playerLY;
     const parts = [];
-    parts.push(`player@(${px.toFixed(0)},${py.toFixed(0)}) fuel=${state.fuel.toFixed(0)}`);
+    parts.push(`player@(${px.toFixed(0)},${py.toFixed(0)}) fuel=${state.fuel.toFixed(0)} hp=${state.playerHp}/${state.playerHpMax}`);
+    parts.push(`counters[rescued=${state.rescuedCount} kills=${state.animalsKilled} cooked=${state.cookedServed} planks=${state.planksProduced} supply=${state.supplyRunsCompleted} carriedLogs=${state.carriedLogs} carriedMeat=${state.carriedMeat}]`);
 
     switch (stage.type) {
       case 'rescueSurvivors': {
@@ -750,6 +917,19 @@ class Bot {
         if (this.padPos) {
           const d = dist(px, py, this.padPos.x, this.padPos.y);
           parts.push(`pad@(${this.padPos.x.toFixed(0)},${this.padPos.y.toFixed(0)}) d=${d.toFixed(0)}px`);
+        }
+        break;
+      }
+      case 'cookedServed':
+      case 'planksProduced':
+      case 'planksStocked':
+      case 'supplyRunsCompleted':
+      case 'fishCaught': {
+        const workers = (state.workers ?? []);
+        parts.push(`workers=${workers.length}`);
+        if (workers.length > 0) {
+          const states = workers.map(w => w.workerState).join(',');
+          parts.push(`workerStates=[${states}]`);
         }
         break;
       }
@@ -839,6 +1019,71 @@ class Bot {
         this.navPrevX = -9999; this.navPrevY = -9999;
         // Mark as a "stage boundary" — allow one opportunistic fuel top-up before pursuing the new goal.
         this.needsTopUp = true;
+        // Per-stage trackers reset.
+        this.rescueBlacklist.clear();
+        this.rescueTargetKey = '';
+        this.rescueTargetT0  = Date.now();
+        this.rescueTargetLastRescued = state.rescuedCount;
+        this.huntState.currentIdx = -1; this.huntState.lastHp = -1;
+        this.huntState.noProgressDwells = 0;
+        this.huntState.postKillLoiterMs = 0; this.huntState.postKillTarget = null;
+        this.progressT0 = Date.now();
+        this.progressSnapshot = null;
+        this.forceAltStageUntil = 0;
+      }
+
+      // ── 30s no-progress hard cap with 15s [botstall] INFO logs ────────
+      // Progress counters: rescued, animalsKilled, cooked, planks, supplyRuns,
+      // hero drift > 60 px. Any change → reset 30s timer. 15s before the 30s
+      // cutoff fires we also log one INFO [botstall] line.
+      {
+        const snap = {
+          rescued: state.rescuedCount, kills: state.animalsKilled,
+          cooked: state.cookedServed, planks: state.planksProduced,
+          supply: state.supplyRunsCompleted,
+          px: state.playerLX, py: state.playerLY,
+        };
+        if (!this.progressSnapshot) {
+          this.progressSnapshot = { ...snap, anchorX: snap.px, anchorY: snap.py };
+          this.progressT0 = Date.now();
+        } else {
+          const p = this.progressSnapshot;
+          const drift = Math.hypot(snap.px - p.anchorX, snap.py - p.anchorY);
+          const changed =
+            snap.rescued !== p.rescued || snap.kills !== p.kills ||
+            snap.cooked  !== p.cooked  || snap.planks !== p.planks ||
+            snap.supply  !== p.supply  || drift > 60;
+          if (changed) {
+            this.progressSnapshot = { ...snap, anchorX: snap.px, anchorY: snap.py };
+            this.progressT0 = Date.now();
+            this.lastBotstallLogMs = 0;
+          } else {
+            const idle = Date.now() - this.progressT0;
+            if (idle >= 15000 && Date.now() - this.lastBotstallLogMs >= 15000
+                && state.currentStageIdx < state.goalStages.length) {
+              const cur  = state.goalStages[state.currentStageIdx];
+              const diag = this.diagnoseStall(state, cur);
+              console.log(`  [botstall] reason=no-progress stage=${state.currentStageIdx} goal=${cur.type} idle=${(idle/1000).toFixed(0)}s msg=${diag}`);
+              this.lastBotstallLogMs = Date.now();
+            }
+            if (idle >= 30000 && state.currentStageIdx < state.goalStages.length
+                && Date.now() - this.lastForcedSwitchMs > 15000) {
+              const cur = state.goalStages[state.currentStageIdx];
+              const diag = this.diagnoseStall(state, cur);
+              console.log(`  [botstall] reason=30s-cap stage=${state.currentStageIdx} goal=${cur.type} msg=${diag}`);
+              // Force task switch for 6 s. Rescue → fire; hunt → rescue;
+              // build → chop a log; other → fire cycle.
+              this.forceAltStageUntil = Date.now() + 6000;
+              this.lastForcedSwitchMs  = Date.now();
+              // Reset 30s window so we don't re-trigger every tick.
+              this.progressT0 = Date.now();
+              // Also flush any sticky nav/hunt/rescue state that may be causing the stall.
+              this.navPrevX = -9999; this.navPrevY = -9999;
+              this._path = null;
+              this.huntState.currentIdx = -1; this.huntState.noProgressDwells = 0;
+            }
+          }
+        }
       }
 
       // ── Goal stall check with diagnostic logging ──────────────────────
@@ -908,6 +1153,24 @@ class Bot {
         // Stage boundary opportunity: one fire cycle before committing to the next task.
         await this.fireCycle(state, 1200, 1200);
         this.needsTopUp = false;
+      } else if (Date.now() < this.forceAltStageUntil) {
+        // Hard-cap forced task switch (30s no progress). Pick a fallback that
+        // can't deadlock on the same obstacle as the current stage.
+        this.needsTopUp = false;
+        const t = curStage.type;
+        if (t === 'rescueSurvivors') {
+          // Top up fire — gives workers a chance to chop and animals to move.
+          await this.fireCycle(state, 1200, 1200);
+        } else if (t === 'huntAnimals') {
+          // Fall back to a rescue tick to give the animals time to drift closer
+          // (plus clear any sticky hunt target).
+          await this.doRescue({ target: state.rescuedCount + 1 }, state);
+        } else if (t === 'buildStructure') {
+          // Chop a log → coins at the fire cycle increments naturally.
+          await this.fireCycle(state, 1200, 1200);
+        } else {
+          await this.fireCycle(state, 1200, 1200);
+        }
       } else {
         // Committed to current stage — stay on it.
         this.needsTopUp = false;
