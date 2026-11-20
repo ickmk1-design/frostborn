@@ -52,7 +52,8 @@
   ],
   "frozenSurvivors": [
     { "iso": [5, 14] }, { "iso": [11, 14] }, { "iso": [8, 15] },
-    { "iso": [6, 13] }, { "iso": [10, 13] }, { "iso": [7, 16] }, { "iso": [9, 16] }
+    { "iso": [6, 13] }, { "iso": [10, 13] }, { "iso": [7, 16] }, { "iso": [9, 16] },
+    { "iso": [8, 14] }, { "iso": [6, 15] }
   ],
   "survivorFollowRangePx": 90,
   "survivorThawRangePx": 115,
@@ -66,7 +67,7 @@
     [4,12],[5,12],[6,12],[7,12],[10,12],[11,12],[12,12],[13,12]
   ],
   "gate": [[8,12],[9,12]],
-  "goal": { "survivorsToRescue": 7 },
+  "goal": { "survivorsToRescue": 9 },
   "stages": [
     {
       "type": "rescueSurvivors", "target": 4,
@@ -79,17 +80,17 @@
       "hintTextTr": "Çadır kur  120🪙"
     },
     {
-      "type": "cookedServed", "target": 6,
-      "hintText": "Fish + stew — 6 cooked meals",
-      "hintTextTr": "Balık + güveç — 6 yemek"
+      "type": "cookedServed", "target": 12,
+      "hintText": "Fish + stew — 12 cooked meals",
+      "hintTextTr": "Balık + güveç — 12 yemek"
     },
     {
-      "type": "supplyRunsCompleted", "target": 1,
-      "hintText": "Ship 1 supply run (10 meat + 5 planks)",
-      "hintTextTr": "1 tam sefer gönder (10 et + 5 tahta)"
+      "type": "supplyRunsCompleted", "target": 2,
+      "hintText": "Ship 2 supply runs (10 meat + 5 planks each)",
+      "hintTextTr": "2 tam sefer gönder (10 et + 5 tahta)"
     },
     {
-      "type": "rescueSurvivors", "target": 7,
+      "type": "rescueSurvivors", "target": 9,
       "hintText": "Rescue the last survivors",
       "hintTextTr": "Kalanları kurtar"
     }
@@ -97,8 +98,16 @@
   "hintDurationSec": 20,
   "animals": [
     { "iso": [6, 20], "type": "stag", "roamCenter": [6, 20], "roamRadius": 2 },
-    { "iso": [10, 20], "type": "stag", "roamCenter": [10, 20], "roamRadius": 2 }
+    { "iso": [10, 20], "type": "stag", "roamCenter": [10, 20], "roamRadius": 2 },
+    { "iso": [5, 23], "type": "wolf", "roamCenter": [5, 23], "roamRadius": 2 },
+    { "iso": [11, 23], "type": "wolf", "roamCenter": [11, 23], "roamRadius": 2 }
   ],
+  "blizzard": {
+    "triggerAtRescued": 4,
+    "durationSec": 45,
+    "fuelDrainMultiplier": 1.6,
+    "freezeMultiplier": 1.3
+  },
   "animalConfig": {
     "stag": {
       "hp": 3, "speed": 50, "aggroSpeed": 0, "aggroRange": 0,

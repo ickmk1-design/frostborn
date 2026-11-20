@@ -16,13 +16,13 @@
   },
   "fire": {
     "iso": [8, 7],
-    "fuelMax": 130,
+    "fuelMax": 200,
     "fuelDrainPerSec": 5,
     "fuelPerLog": 20,
     "coinsPerLog": 5,
     "freezeRatePerSec": 4,
     "freezeMax": 100,
-    "initialFuel": 130,
+    "initialFuel": 200,
     "fuelDrainWarmupSec": 120,
     "fuelDrainWarmupMul": 0.20
   },
@@ -41,7 +41,7 @@
     }
   ],
   "stations": [
-    { "id": "lumber_mill_1", "kind": "lumber_mill", "iso": [4, 7], "cycleMs": 5000 },
+    { "id": "lumber_mill_1", "kind": "lumber_mill", "iso": [4, 7], "cycleMs": 7000 },
     { "id": "ice_hole_1",    "kind": "ice_hole",    "iso": [6, 16] },
     { "id": "ice_hole_2",    "kind": "ice_hole",    "iso": [10, 16] },
     { "id": "clean_1",       "kind": "cleaning_table", "iso": [7, 13] },
@@ -49,7 +49,7 @@
   ],
   "frozenSurvivors": [
     { "iso": [5, 14] }, { "iso": [11, 14] }, { "iso": [8, 15] },
-    { "iso": [6, 13] }, { "iso": [10, 13] }, { "iso": [7, 16] }
+    { "iso": [6, 13] }, { "iso": [10, 13] }, { "iso": [8, 14] }
   ],
   "survivorFollowRangePx": 90,
   "survivorThawRangePx": 115,

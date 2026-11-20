@@ -22,12 +22,15 @@
       8,
       7
     ],
-    "fuelMax": 100,
+    "fuelMax": 140,
     "fuelDrainPerSec": 4,
     "fuelPerLog": 20,
     "coinsPerLog": 5,
     "freezeRatePerSec": 4,
-    "freezeMax": 100
+    "freezeMax": 100,
+    "initialFuel": 140,
+    "fuelDrainWarmupSec": 60,
+    "fuelDrainWarmupMul": 0.3
   },
   "trees": [
     {
@@ -291,24 +294,12 @@
   "animals": [
     {
       "iso": [
-        6,
-        17
-      ],
-      "type": "wolf",
-      "roamCenter": [
-        6,
+        8,
         18
       ],
-      "roamRadius": 2.5
-    },
-    {
-      "iso": [
-        10,
-        17
-      ],
       "type": "wolf",
       "roamCenter": [
-        10,
+        8,
         18
       ],
       "roamRadius": 2.5

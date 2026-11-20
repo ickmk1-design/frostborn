@@ -85,6 +85,7 @@ interface Survivor {
   stuckMs: number;
   stuckCheckX: number;
   stuckCheckY: number;
+  followingMs?: number;
 }
 
 interface AnimalEntity {
@@ -1789,6 +1790,7 @@ export default class GameScene extends Phaser.Scene {
 
         if (distPl < cfg.survivorFollowRangePx) {
           sv.state = 'following';
+          sv.followingMs = 0;
           // Claim a unique ring slot right now so each thawed survivor heads for
           // its own spot around the fire — no queueing, no overlap.
           sv.workerSlot = this.nextWorkerSlot;
@@ -1823,7 +1825,11 @@ export default class GameScene extends Phaser.Scene {
     // applySeparation pushing them apart. Replaces the old single-file trail that
     // jammed followers at the gate. Once close to camp, each picks a unique ring slot
     // around the fire and walks to it before thawing — no queueing.
-    const slotR = Math.max(90, this.numWorkerSlots * 10);
+    //
+    // The fire pit obstacle has radius 62px. With iso squish (Y*0.6), a 90px
+    // ring puts the north/south slots inside the obstacle and A* can't path
+    // there — survivors stall and never thaw. 120px keeps every slot outside.
+    const slotR = Math.max(120, this.numWorkerSlots * 10);
     for (const sv of this.survivors) {
       if (sv.state !== 'following') continue;
       const svPrevLx = sv.lx; const svPrevLy = sv.ly;
@@ -1897,6 +1903,24 @@ export default class GameScene extends Phaser.Scene {
         const toFireDir = this.velToDir(this.fireX - sv.lx, this.fireY - sv.ly);
         if (toFireDir >= 0) sv.lastDir = toFireDir;
         sv.state = 'thawing';
+      }
+      // Last-resort stuck-follower fallback: slot/grid fix above should handle
+      // 99% of cases. If somehow pinched for 30s, fade the sprite, snap, and
+      // fade back in as "thawing" so the teleport reads as a glitchy rescue
+      // rather than a visible jump. Deliberate: slot geometry failures should
+      // be caught by the slotR bump — this is a safety net only.
+      sv.followingMs = (sv.followingMs ?? 0) + delta;
+      if (useRingTarget && sv.followingMs > 30_000 && sv.state === 'following') {
+        this.tweens.add({
+          targets: sv.sprite, alpha: 0, duration: 250, yoyo: true,
+          onYoyo: () => {
+            sv.lx = slotX; sv.ly = slotY;
+            const toFireDir2 = this.velToDir(this.fireX - sv.lx, this.fireY - sv.ly);
+            if (toFireDir2 >= 0) sv.lastDir = toFireDir2;
+            sv.state = 'thawing';
+          },
+        });
+        sv.followingMs = -999_999;  // disarm until next frozen→following transition
       }
     }
 
@@ -1973,7 +1997,9 @@ export default class GameScene extends Phaser.Scene {
         // Lock facing to wolf direction
         const toWolfDir = this.velToDir(a.lx - this.playerLX, a.ly - this.playerLY);
         if (toWolfDir >= 0) this.playerLastDir = toWolfDir;
-        this.playerAttackMs = a.spec.attackIntervalMs;
+        // Hero swing cadence is capped at 1200 ms so peaceful animals
+        // (stag/deer with attackIntervalMs ~ 99999) don't lock the hero out.
+        this.playerAttackMs = Math.min(a.spec.attackIntervalMs, 1200);
         this.playCharAnim(this.playerSprite, 'hero', 'chop', this.playerLastDir);
         const hitTarget = a;
         this.time.delayedCall(220, () => {

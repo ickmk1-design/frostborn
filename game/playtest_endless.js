@@ -18,7 +18,7 @@ const path = require('path');
 const DIST = path.join(__dirname, 'dist');
 const PORT = 7779;
 const VIEWPORT = { width: 393, height: 852 };
-const RUN_TIMEOUT_MS = 15 * 60 * 1000;   // 15 min hard cap
+const RUN_TIMEOUT_MS = 24 * 60 * 1000;   // 24 min hard cap — wave 10 target needs ~20 min at 120s/wave
 const TICK_MS = 500;                      // bot decision cadence
 const MIN_WAVES_REQUIRED = 5;
 

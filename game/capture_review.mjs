@@ -7,7 +7,7 @@ import sharp from 'sharp';
 import path from 'path';
 import { mkdir } from 'fs/promises';
 
-const BASE    = process.env.CAP_URL || 'https://cytbilisim.com/frostborn/game/';
+const BASE    = process.env.CAP_URL || 'http://localhost:8911/';
 const OUT_DIR = 'C:/Users/ickmk/Frostborn/store_assets/review';
 const VW_W    = 393;
 const VW_H    = 852;
@@ -96,7 +96,21 @@ async function loiter(page, waitMs) {
 }
 
 const PLAN = [
-  { lvl: 15, label: 'L15 Grand Alpha', thaw: 2, wait: 15_000, feed: 3 },
+  { lvl: 1,  label: 'L1 First Fire',    thaw: 0, wait: 10_000 },
+  { lvl: 2,  label: 'L2 Second Thaw',   thaw: 1, wait: 10_000 },
+  { lvl: 3,  label: 'L3 Dusk',          thaw: 1, wait: 12_000 },
+  { lvl: 4,  label: 'L4 Blizzard',      thaw: 1, wait: 12_000 },
+  { lvl: 5,  label: 'L5 Pier',          thaw: 1, wait: 14_000 },
+  { lvl: 6,  label: 'L6 Cook Pot',      thaw: 1, wait: 14_000 },
+  { lvl: 7,  label: 'L7 Lumber Mill',   thaw: 1, wait: 14_000 },
+  { lvl: 8,  label: 'L8 First Cabin',   thaw: 2, wait: 14_000 },
+  { lvl: 9,  label: 'L9 Crew',          thaw: 2, wait: 14_000 },
+  { lvl: 10, label: 'L10 Hunting',      thaw: 2, wait: 14_000 },
+  { lvl: 11, label: 'L11 Grinder',      thaw: 2, wait: 16_000 },
+  { lvl: 12, label: 'L12 Supply Sled',  thaw: 2, wait: 18_000 },
+  { lvl: 13, label: 'L13 Village',      thaw: 3, wait: 18_000 },
+  { lvl: 14, label: 'L14 Night Watch',  thaw: 2, wait: 16_000 },
+  { lvl: 15, label: 'L15 Grand Alpha',  thaw: 2, wait: 15_000 },
 ];
 
 async function captureLevel(browser, p) {
@@ -128,9 +142,11 @@ async function captureLevel(browser, p) {
 }
 
 async function makeContactSheet(paths) {
-  const cellW = 1290, cellH = 2796;
-  const gutter = 16;
-  const cols = 3, rows = 3;
+  // Thumbnails to keep final sheet under a reasonable size (15 × 1290×2796
+  // would exceed 50 MP sharp limit). Scale each cell to 430×932.
+  const cellW = 430, cellH = 932;
+  const gutter = 12;
+  const cols = 3, rows = Math.ceil(paths.length / cols);
   const sheetW = cellW * cols + gutter * (cols + 1);
   const sheetH = cellH * rows + gutter * (rows + 1);
   const bg = await sharp({
@@ -141,7 +157,8 @@ async function makeContactSheet(paths) {
     const r = Math.floor(i / cols), c = i % cols;
     const x = gutter + c * (cellW + gutter);
     const y = gutter + r * (cellH + gutter);
-    composites.push({ input: paths[i], left: x, top: y });
+    const thumb = await sharp(paths[i]).resize(cellW, cellH, { fit: 'cover' }).png().toBuffer();
+    composites.push({ input: thumb, left: x, top: y });
   }
   await sharp(bg).composite(composites).png().toFile(path.join(OUT_DIR, 'contact_sheet.png'));
   console.log(`[OK] contact_sheet.png saved (${sheetW}x${sheetH})`);

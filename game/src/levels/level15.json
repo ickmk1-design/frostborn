@@ -55,7 +55,8 @@
   "frozenSurvivors": [
     { "iso": [5, 14] }, { "iso": [11, 14] }, { "iso": [8, 15] },
     { "iso": [6, 13] }, { "iso": [10, 13] }, { "iso": [7, 16] }, { "iso": [9, 16] },
-    { "iso": [5, 18] }, { "iso": [11, 18] }, { "iso": [8, 20] }
+    { "iso": [5, 18] }, { "iso": [11, 18] }, { "iso": [8, 20] },
+    { "iso": [7, 14] }, { "iso": [9, 14] }
   ],
   "survivorFollowRangePx": 90,
   "survivorThawRangePx": 115,
@@ -69,7 +70,7 @@
     [4,12],[5,12],[6,12],[7,12],[10,12],[11,12],[12,12],[13,12]
   ],
   "gate": [[8,12],[9,12]],
-  "goal": { "survivorsToRescue": 8 },
+  "goal": { "survivorsToRescue": 12 },
   "stages": [
     {
       "type": "rescueSurvivors", "target": 4,
@@ -82,9 +83,14 @@
       "hintTextTr": "Çadır kur  100🪙"
     },
     {
-      "type": "cookedServed", "target": 4,
-      "hintText": "Cook 4 meals — the village must eat",
-      "hintTextTr": "4 yemek pişir"
+      "type": "cookedServed", "target": 12,
+      "hintText": "Cook 12 meals — the village must eat",
+      "hintTextTr": "12 yemek pişir"
+    },
+    {
+      "type": "supplyRunsCompleted", "target": 2,
+      "hintText": "Ship 2 supply runs for the siege",
+      "hintTextTr": "Kuşatma için 2 sefer gönder"
     },
     {
       "type": "huntAnimals", "target": 1,
@@ -92,7 +98,7 @@
       "hintTextTr": "Yüce Alfa'yı öldür"
     },
     {
-      "type": "rescueSurvivors", "target": 8,
+      "type": "rescueSurvivors", "target": 12,
       "hintText": "Rescue the last survivors — the camp lives",
       "hintTextTr": "Son kişileri kurtar — köy yaşar"
     }
@@ -103,7 +109,11 @@
     { "iso": [5, 20], "type": "wolf", "roamCenter": [5, 20], "roamRadius": 2 },
     { "iso": [11, 20], "type": "wolf", "roamCenter": [11, 20], "roamRadius": 2 },
     { "iso": [6, 24], "type": "wolf", "roamCenter": [6, 24], "roamRadius": 2 },
-    { "iso": [10, 24], "type": "wolf", "roamCenter": [10, 24], "roamRadius": 2 }
+    { "iso": [10, 24], "type": "wolf", "roamCenter": [10, 24], "roamRadius": 2 },
+    { "iso": [5, 22], "type": "wolf", "roamCenter": [5, 22], "roamRadius": 2 },
+    { "iso": [11, 22], "type": "wolf", "roamCenter": [11, 22], "roamRadius": 2 },
+    { "iso": [6, 28], "type": "wolf", "roamCenter": [6, 28], "roamRadius": 2 },
+    { "iso": [10, 28], "type": "wolf", "roamCenter": [10, 28], "roamRadius": 2 }
   ],
   "animalConfig": {
     "wolf": {
@@ -115,7 +125,7 @@
       "backoffDistPx": 150, "backoffSpeedPx": 200
     },
     "grandalpha": {
-      "hp": 12, "speed": 55, "aggroSpeed": 110, "aggroRange": 220,
+      "hp": 15, "speed": 55, "aggroSpeed": 110, "aggroRange": 220,
       "circleDistancePx": 160, "attackRange": 95, "attackIntervalMs": 1200,
       "biteIntervalMs": 1100, "biteDamage": 2, "knockbackPx": 170,
       "meatDrop": 4, "meatPerHit": 1, "respawnDelaySec": 999,
@@ -128,7 +138,7 @@
   "cookingConfig": { "cookTimeMs": 3500, "meatToCoins": 10 },
   "blizzard": {
     "triggerAtRescued": 4,
-    "durationSec": 60,
+    "durationSec": 75,
     "fuelDrainMultiplier": 2.0,
     "freezeMultiplier": 1.5
   },
